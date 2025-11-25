@@ -38,7 +38,7 @@ using namespace std;
 // GUI handles / state
 // ------------------------
 HINSTANCE hInst;
-HWND hEditKey, hEditInput, hEditOutput, hBtnSaveStatus, hComboMode, hBtnCopy, hBtnOpenOutputDir, hBtnHelp, hStaticKeyLength;
+HWND hEditKey, hEditInput, hEditOutput, hComboMode, hBtnHelp, hStaticKeyLength;
 HWND hStaticCurrentUser, hEditCurrentUser;
 HWND hExCombo, hExSend, hExRefresh, hExInList, hExOutList, hExOpenFolder;
 HFONT hFont, hFontTitle;
@@ -206,12 +206,9 @@ bool DrawStyledButton(LPDRAWITEMSTRUCT dis) {
 #define ID_BTN_DECRYPT             4
 #define ID_BTN_DECRYPT_LAST        114
 #define ID_BTN_IN_FILE             1
-#define ID_BTN_COPY                110
 #define ID_EDIT_KEY                100
 #define ID_EDIT_INPUT              101
 #define ID_EDIT_OUTPUT             102
-#define ID_BTN_SAVE_STATUS         113
-#define ID_BTN_OPEN_OUTPUT_DIR     115
 #define ID_BTN_HELP                116
 #define ID_STATIC_KEY_LENGTH       117
 #define ID_LOGIN_EDIT_USER         201
@@ -854,13 +851,11 @@ void HandleEncryptDecrypt(HWND hWnd, bool encrypt, bool decryptLast) {
         result = DirectTextEncrypt(inputTxt, keyStr, mode);
         if (result.rfind(L"Ошибка:", 0) == 0) { MessageBoxW(hWnd, result.c_str(), L"Ошибка шифрования", MB_OK | MB_ICONERROR); return; }
         AutoSaveResult(hWnd, result, g_CurrentUser, true, g_FileCounter);
-        SetWindowTextW(hBtnSaveStatus, L"📥 Автосохранено (Зашифровано)");
     }
     else {
         result = DirectTextDecrypt(inputTxt, keyStr, mode);
         if (result.rfind(L"Ошибка:", 0) == 0) { MessageBoxW(hWnd, result.c_str(), L"Ошибка расшифрования", MB_OK | MB_ICONERROR); return; }
         AutoSaveResult(hWnd, result, g_CurrentUser, false, g_FileCounter);
-        SetWindowTextW(hBtnSaveStatus, L"📥 Автосохранено (Расшифровано)");
     }
 
     SetWindowTextW(hEditOutput, result.c_str());
@@ -899,7 +894,6 @@ void HandleSaveResult(HWND hWnd) {
         if (bin.size() >= 5 && bin[0] == 'G' && bin[1] == 'O' && bin[2] == 'S' && bin[3] == 'T' && bin[4] == '0') isEnc = true;
 
         if (SaveResultToFile(res, wstring(file), isEnc)) {
-            SetWindowTextW(hBtnSaveStatus, L"📥 Сохранено вручную");
             MessageBoxW(hWnd, L"Файл успешно сохранён!", L"Успех", MB_OK | MB_ICONINFORMATION);
         }
         else {
@@ -1032,7 +1026,6 @@ void ChangeUser(HWND hWnd) {
                 wstring k = LoadUserKey(g_CurrentUser);
                 SetWindowTextW(hEditKey, k.c_str()); UpdateKeyLengthIndicator(hWnd);
                 SetWindowTextW(hEditInput, L""); SetWindowTextW(hEditOutput, L"");
-                SetWindowTextW(hBtnSaveStatus, L"💾 Сохранить");
                 g_LastInputText.clear(); g_LastEncryptedFile.clear(); g_LastUser.clear();
                 Exchange_UpdateAllRecipients(); Exchange_RefreshInboxList(); Exchange_RefreshOutboxList();
                 break;
@@ -1798,7 +1791,7 @@ void OpenExchangeWindow(HWND parent) {
     }
     HWND dlg = CreateWindowW(L"EXCHANGE_GUI", L"Обмен файлами",
         WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 700, 400,
+        CW_USEDEFAULT, CW_USEDEFAULT, 840, 460,
         parent, NULL, hInst, NULL);
     if (dlg) { ShowWindow(dlg, SW_SHOW); UpdateWindow(dlg); }
 }
@@ -1884,7 +1877,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         CreateStyledButton(hWnd, ID_BTN_GENERATE_KEY, L"🔧 Сгенерировать",
             M + 140 + 8 + 600 + 8 + 120 + 8,
             y,
-            120, UI_H, false);
+            150, UI_H, false);
 
         RECT rc;
         GetClientRect(hWnd, &rc);
@@ -1936,22 +1929,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         hBtnHelp = CreateStyledButton(hWnd, ID_BTN_HELP, L"❓ Справка",
             M + 80 + 8 + 220 + 8, y, 100, UI_H, false);
-        y += UI_H + 8;
-
-        int utilityX = M;
-        int utilityGap = 14;
-        hBtnCopy = CreateStyledButton(hWnd, ID_BTN_COPY, L"📋 Копировать ключ",
-            utilityX, y, 200, UI_H, false);
-        utilityX += 200 + utilityGap;
-
-        hBtnSaveStatus = CreateStyledButton(hWnd, ID_BTN_SAVE_STATUS, L"💾 Сохранить",
-            utilityX, y, 160, UI_H, false);
-        utilityX += 160 + utilityGap;
-
-        hBtnOpenOutputDir = CreateStyledButton(hWnd, ID_BTN_OPEN_OUTPUT_DIR, L"📂 Выходные файлы",
-            utilityX, y, 200, UI_H, false);
-
-        y += UI_H + 8;
+        y += UI_H + 16;
 
         int WBTN = 170;
         int GAP = 14;
@@ -2001,7 +1979,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             SetWindowTextW(hEditInput, L"");
             SetWindowTextW(hEditOutput, L"");
-            SetWindowTextW(hBtnSaveStatus, L"💾 Сохранить");
             g_LastInputText.clear();
             g_LastEncryptedFile.clear();
             g_LastUser.clear();
@@ -2025,7 +2002,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         RECT textCard = CombineRects(hWnd, { hEditInput, hEditOutput }, ScaleByDpi(hWnd, 18));
         DrawSoftCard(hWnd, hdc, textCard);
 
-        RECT actions = CombineRects(hWnd, { hComboMode, hBtnHelp, hBtnSaveStatus, hBtnOpenOutputDir, hBtnCopy }, ScaleByDpi(hWnd, 14));
+        RECT actions = CombineRects(hWnd, { hComboMode, hBtnHelp }, ScaleByDpi(hWnd, 14));
         DrawSoftCard(hWnd, hdc, actions);
 
         EndPaint(hWnd, &ps);
@@ -2122,17 +2099,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         }
 
-        case ID_BTN_COPY: {
-            wchar_t b[256];
-            GetWindowTextW(hEditKey, b, 256);
-            CopyKeyToClipboard(hWnd, NormalizeHex64(b));
-            break;
-        }
-
         case ID_BTN_CLEAR: {
             SetWindowTextW(hEditInput, L"");
             SetWindowTextW(hEditOutput, L"");
-            SetWindowTextW(hBtnSaveStatus, L"💾 Сохранить");
             g_LastInputText = L"";
             break;
         }
@@ -2148,20 +2117,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case ID_BTN_DECRYPT_LAST:
             HandleEncryptDecrypt(hWnd, false, true);
             break;
-
-        case ID_BTN_SAVE_STATUS:
-            HandleSaveResult(hWnd);
-            break;
-
-        case ID_BTN_OPEN_OUTPUT_DIR: {
-            wstring target = GetOutputDir();
-            if (!g_CurrentUser.empty())
-                target += L"\\" + g_CurrentUser;
-
-            if (!OpenFolderInExplorer(target))
-                MessageBoxW(hWnd, L"Не удалось открыть папку.", L"Ошибка", MB_OK | MB_ICONERROR);
-            break;
-        }
 
         case ID_BTN_HELP: {
             wstring help =
