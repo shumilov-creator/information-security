@@ -938,6 +938,27 @@ void Exchange_UpdateAllRecipients() {
     Exchange_RebuildRecipientsCombo(L"", false);
 }
 
+bool Exchange_ExtractKeyAndPayload(const wstring& fileData, wstring& keyOut, wstring& payloadOut) {
+    size_t nl = fileData.find(L'\n');
+    if (nl == wstring::npos) return false;
+
+    wstring firstLine = fileData.substr(0, nl);
+    firstLine.erase(remove(firstLine.begin(), firstLine.end(), L'\r'), firstLine.end());
+    wstring trimmed = TrimWString(firstLine);
+
+    wstring lower = trimmed;
+    transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
+    if (lower.rfind(L"key:", 0) != 0) return false;
+
+    wstring candidate = NormalizeHex64(trimmed.substr(4));
+    if (!ValidateKey(candidate)) return false;
+
+    wstring rest = fileData.substr(nl + 1);
+    payloadOut = TrimWString(rest);
+    keyOut = candidate;
+    return !payloadOut.empty();
+}
+
 bool Exchange_SendTo(const wstring& recipient, const wstring& textToSend, int mode) {
     if (recipient.empty()) return false;
     if (!UserExists(recipient)) return false;
@@ -947,6 +968,8 @@ bool Exchange_SendTo(const wstring& recipient, const wstring& textToSend, int mo
     vector<uint8_t> key = hexStringToBytes(recKey);
     vector<uint8_t> cont = GostEncryptContainer(textToSend, key, mode);
     wstring b64 = UTF8ToWString(Base64Encode(cont));
+
+    wstring fileContent = L"KEY:" + recKey + L"\r\n" + b64;
 
     wstring base = GetExchangeDir();
     wstring inRec = base + L"\\" + recipient + L"\\Inbox";
@@ -959,7 +982,7 @@ bool Exchange_SendTo(const wstring& recipient, const wstring& textToSend, int mo
         << setw(2) << st.wHour << setw(2) << st.wMinute;
     wstring fname = L"from_" + g_CurrentUser + L"_to_" + recipient + L"_" + ts.str() + L"_" + to_wstring(++g_FileCounter) + L".txt";
 
-    auto writeFile = [&](const wstring& dir) { ofstream f(dir + L"\\" + fname, ios::binary); if (!f) return false; f << WStringToUTF8(b64); return true; };
+    auto writeFile = [&](const wstring& dir) { ofstream f(dir + L"\\" + fname, ios::binary); if (!f) return false; f << WStringToUTF8(fileContent); return true; };
     bool ok1 = writeFile(inRec), ok2 = writeFile(outMe);
     return ok1 && ok2;
 }
@@ -1643,7 +1666,16 @@ LRESULT CALLBACK ExchangeWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
                 ifstream in(path, ios::binary);
                 if (in) {
                     string buf((istreambuf_iterator<char>(in)), {});
-                    SetWindowTextW(hEditInput, UTF8ToWString(buf).c_str());
+                    wstring fileData = UTF8ToWString(buf);
+                    wstring keyFromFile, payload;
+                    if (Exchange_ExtractKeyAndPayload(fileData, keyFromFile, payload)) {
+                        SetWindowTextW(hEditKey, keyFromFile.c_str());
+                        UpdateKeyLengthIndicator(GetParent(hWnd));
+                        SetWindowTextW(hEditInput, payload.c_str());
+                    }
+                    else {
+                        SetWindowTextW(hEditInput, fileData.c_str());
+                    }
                     MessageBoxW(hWnd, L"Текст загружен в левое поле основного окна.", L"Обмен", MB_OK | MB_ICONINFORMATION);
                 }
             }
