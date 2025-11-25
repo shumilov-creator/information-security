@@ -17,6 +17,7 @@
 #include <commctrl.h>
 #include <wincrypt.h>
 #include <bcrypt.h>
+#include <uxtheme.h>
 
 #pragma comment(lib, "Comdlg32.lib")
 #pragma comment(lib, "Shlwapi.lib")
@@ -37,7 +38,9 @@ HWND hEditKey, hEditInput, hEditOutput, hBtnSaveStatus, hComboMode, hBtnCopy, hB
 HWND hStaticCurrentUser, hEditCurrentUser, hStatusBar;
 HWND hExCombo, hExSend, hExRefresh, hExInList, hExOutList, hExOpenFolder;
 HFONT hFont, hFontTitle, hFontSmall;
-HBRUSH hBrushBgLight, hBrushBgWhite, hBrushRed, hBrushBlue, hBrushGray;
+HBRUSH hBrushBgLight, hBrushBgWhite, hBrushRed, hBrushBlue;
+HBRUSH hBrushCard, hBrushCardHeader;
+HPEN   hPenCardBorder;
 HWND hTooltip;
 
 wstring BASE_DIR_PATH = L"";
@@ -54,16 +57,102 @@ static vector<wstring> g_AllRecipients;
 
 // ------------------------
 const COLORREF C_BLUE = RGB(0, 120, 215);
-const COLORREF C_BG_LIGHT = RGB(245, 247, 250);
+const COLORREF C_BG_LIGHT = RGB(244, 246, 249);
 const COLORREF C_BG_WHITE = RGB(255, 255, 255);
-const COLORREF C_GRAY = RGB(225, 230, 235);
 const COLORREF C_RED = RGB(255, 224, 224);
 const COLORREF C_TEXT = RGB(45, 45, 45);
+const COLORREF C_CARD = RGB(255, 255, 255);
+const COLORREF C_CARD_HEADER = RGB(234, 239, 247);
+const COLORREF C_CARD_BORDER = RGB(198, 208, 223);
 
 const int UI_H = 30;
 const int UI_PAD = 12;
 const int UI_GAP = 10;
 const int UI_BTN = 160;
+
+// ------------------------
+// Styling helpers
+// ------------------------
+int ScaleByDpi(HWND hWnd, int px) {
+    UINT dpi = 96;
+    if (HMODULE hU = GetModuleHandleW(L"user32")) {
+        typedef UINT(WINAPI* FN)(HWND);
+        static FN get = (FN)GetProcAddress(hU, "GetDpiForWindow");
+        if (get) dpi = get(hWnd);
+    }
+    return MulDiv(px, (int)dpi, 96);
+}
+
+RECT GetChildRect(HWND parent, HWND child) {
+    RECT rc{ 0,0,0,0 };
+    if (!child) return rc;
+    GetWindowRect(child, &rc);
+    MapWindowPoints(NULL, parent, (POINT*)&rc, 2);
+    return rc;
+}
+
+RECT UnionRects(const RECT& a, const RECT& b) {
+    RECT r{};
+    r.left = min(a.left, b.left);
+    r.top = min(a.top, b.top);
+    r.right = max(a.right, b.right);
+    r.bottom = max(a.bottom, b.bottom);
+    return r;
+}
+
+RECT CombineRects(HWND parent, std::initializer_list<HWND> children, int padding) {
+    RECT combined{ 0,0,0,0 };
+    bool has = false;
+    for (HWND c : children) {
+        if (!c) continue;
+        RECT rc = GetChildRect(parent, c);
+        if (!has) { combined = rc; has = true; }
+        else combined = UnionRects(combined, rc);
+    }
+    if (!has) { SetRectEmpty(&combined); return combined; }
+    InflateRect(&combined, padding, padding);
+    return combined;
+}
+
+void PaintGradientBackground(HDC hdc, const RECT& rc) {
+    // Простая заливка без градиента для более строгого вида
+    FillRect(hdc, &rc, hBrushBgLight);
+}
+
+void DrawSoftCard(HWND parent, HDC hdc, const RECT& rc) {
+    if (IsRectEmpty(&rc)) return;
+    int radius = ScaleByDpi(parent, 10);
+
+    HPEN oldPen = (HPEN)SelectObject(hdc, hPenCardBorder);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, hBrushCard);
+
+    // корпус секции
+    RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, radius, radius);
+
+    // верхняя полоса для визуального разделения
+    RECT header = rc;
+    int inset = ScaleByDpi(parent, 6);
+    InflateRect(&header, -inset, 0);
+    header.bottom = min(header.bottom, header.top + ScaleByDpi(parent, 30));
+    FillRect(hdc, &header, hBrushCardHeader);
+
+    // линия под заголовком для ясной структуры
+    MoveToEx(hdc, header.left + ScaleByDpi(parent, 8), header.bottom, NULL);
+    LineTo(hdc, header.right - ScaleByDpi(parent, 8), header.bottom);
+
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+}
+
+void ApplyExplorerTheme(HWND hCtrl) {
+    if (hCtrl) SetWindowTheme(hCtrl, L"Explorer", NULL);
+}
+
+void ApplyEditPadding(HWND hCtrl, HWND hWnd) {
+    if (!hCtrl) return;
+    int pad = ScaleByDpi(hWnd, 8);
+    SendMessage(hCtrl, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(pad, pad));
+}
 
 // ------------------------
 // IDs
@@ -940,6 +1029,8 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         CreateWindowW(L"STATIC", L"👤 Имя пользователя", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, 18, hWnd, nullptr, hInst, nullptr); y += 18 + 6;
 
         cbUser = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | CBS_DROPDOWN | CBS_AUTOHSCROLL, M, y, FW_, 200, hWnd, (HMENU)ID_LOGIN_EDIT_USER, hInst, nullptr);
+        ApplyExplorerTheme(cbUser);
+        ApplyEditPadding(cbUser, hWnd);
         y += 32 + 12;
 
         CreateWindowW(L"STATIC", L"🔑 Пароль", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, 18, hWnd, nullptr, hInst, nullptr); y += 18 + 6;
@@ -947,6 +1038,8 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         const int showW = 110;
         ePass = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD, M, y, FW_ - showW - 8, 30, hWnd, (HMENU)ID_LOGIN_EDIT_PASSWORD, hInst, nullptr);
         SendMessage(ePass, EM_SETPASSWORDCHAR, (WPARAM)L'•', 0);
+        ApplyExplorerTheme(ePass);
+        ApplyEditPadding(ePass, hWnd);
 
         bShow = CreateWindowW(L"BUTTON", L"Показать", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, M + (FW_ - showW), y + 5, showW, 20, hWnd, (HMENU)ID_LOGIN_SHOWPASS, hInst, nullptr);
         y += 30 + 16;
@@ -958,8 +1051,17 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         for (HWND c = GetWindow(hWnd, GW_CHILD); c; c = GetWindow(c, GW_HWNDNEXT)) SendMessage(c, WM_SETFONT, (WPARAM)base, TRUE);
         FillUsers(); SetFocus(cbUser); return 0;
     }
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground(hdc, rc);
+        RECT card = CombineRects(hWnd, { stTitle, stSub, cbUser, ePass, bOk, bNew, bShow }, ScaleByDpi(hWnd, 16));
+        DrawSoftCard(hWnd, hdc, card);
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
     case WM_ERASEBKGND: {
-        RECT rc; GetClientRect(hWnd, &rc); FillRect((HDC)wParam, &rc, hBrushBgLight); return 1;
+        RECT rc; GetClientRect(hWnd, &rc); PaintGradientBackground((HDC)wParam, rc); return 1;
     }
     case WM_CTLCOLORSTATIC: {
         HDC hdc = (HDC)wParam; SetTextColor(hdc, C_TEXT); SetBkMode(hdc, TRANSPARENT); return (LRESULT)hBrushBgLight;
@@ -1118,6 +1220,8 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             st->edit = CreateWindowW(L"EDIT", preset.c_str(),
                 WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
                 M, y, CW - 2 * M, dpi(28), dlg, (HMENU)1001, hInst, 0);
+            ApplyExplorerTheme(st->edit);
+            ApplyEditPadding(st->edit, dlg);
             y += dpi(28) + GAP;
 
             int yBtn = CH - M - BH;
@@ -1226,6 +1330,7 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             WS_CHILD | WS_VISIBLE | WS_BORDER | LVS_REPORT | LVS_SINGLESEL,
             10, 34, 860, 420, hWnd, (HMENU)ID_KEYS_LISTVIEW, hInst, 0);
         ListView_SetExtendedListViewStyle(lv, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES | LVS_EX_DOUBLEBUFFER);
+        ApplyExplorerTheme(lv);
 
         hImg = ImageList_Create(16, 16, ILC_COLOR32 | ILC_MASK, 2, 0);
         ImageList_AddIcon(hImg, LoadIcon(NULL, IDI_APPLICATION));
@@ -1259,6 +1364,16 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     case WM_SIZE:
         Layout(hWnd);
         return 0;
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground(hdc, rc);
+        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { stUser, lv }, ScaleByDpi(hWnd, 14)));
+        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { bCopy, bDel, bRef, bImp, bExp, bRen, bSetCur }, ScaleByDpi(hWnd, 12)));
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
 
     case WM_NOTIFY: {
         LPNMHDR hdr = (LPNMHDR)lParam;
@@ -1336,6 +1451,12 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     case WM_DESTROY:
         if (hImg) { ImageList_Destroy(hImg); hImg = NULL; }
         return 0;
+
+    case WM_ERASEBKGND: {
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground((HDC)wParam, rc);
+        return 1;
+    }
     }
 
     return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -1389,6 +1510,8 @@ LRESULT CALLBACK ExchangeWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             WS_CHILD | WS_VISIBLE | WS_BORDER | CBS_DROPDOWN | CBS_AUTOHSCROLL,
             M + 90 + 6, y, 220, 200,
             hWnd, (HMENU)ID_EXCH_COMBO, hInst, NULL);
+        ApplyExplorerTheme(hExCombo);
+        ApplyEditPadding(hExCombo, hWnd);
 
         hExSend = CreateWindowW(L"BUTTON", L"📨 Отправить",
             WS_CHILD | WS_VISIBLE,
@@ -1426,6 +1549,7 @@ LRESULT CALLBACK ExchangeWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             WS_CHILD | WS_VISIBLE | WS_BORDER | LBS_NOTIFY,
             M, listTop, halfW, listH,
             hWnd, (HMENU)ID_EXCH_IN_LIST, hInst, NULL);
+        ApplyExplorerTheme(hExInList);
 
         // заголовок "Исходящие:" над правым списком
         CreateWindowW(L"STATIC", L"📤 Исходящие:",
@@ -1437,6 +1561,7 @@ LRESULT CALLBACK ExchangeWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
             WS_CHILD | WS_VISIBLE | WS_BORDER | LBS_NOTIFY,
             M + halfW + M, listTop, halfW, listH,
             hWnd, (HMENU)ID_EXCH_OUT_LIST, hInst, NULL);
+        ApplyExplorerTheme(hExOutList);
 
 
         // шрифты
@@ -1448,10 +1573,19 @@ LRESULT CALLBACK ExchangeWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         Exchange_RefreshOutboxList();
         return 0;
     }
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground(hdc, rc);
+        RECT lists = CombineRects(hWnd, { hExCombo, hExSend, hExInList, hExOutList, hExRefresh, hExOpenFolder }, ScaleByDpi(hWnd, 14));
+        DrawSoftCard(hWnd, hdc, lists);
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
 
     case WM_ERASEBKGND: {
         RECT rc; GetClientRect(hWnd, &rc);
-        FillRect((HDC)wParam, &rc, hBrushBgLight);
+        PaintGradientBackground((HDC)wParam, rc);
         return 1;
     }
     case WM_CTLCOLORSTATIC: {
@@ -1642,7 +1776,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             WS_CHILD | WS_VISIBLE | SS_CENTER,
             0, y, W, 36, hWnd, (HMENU)-1, hInst, NULL);
         SendMessage(title, WM_SETFONT, (WPARAM)hFontTitle, TRUE);
-        y += 36 + UI_GAP;
+        y += 36;
+
+        HWND subtitle = CreateWindowW(L"STATIC", L"Современный интерфейс с понятными картами и акцентами",
+            WS_CHILD | WS_VISIBLE | SS_CENTER,
+            0, y, W, 22, hWnd, (HMENU)-1, hInst, NULL);
+        SendMessage(subtitle, WM_SETFONT, (WPARAM)hFontSmall, TRUE);
+        y += 22 + UI_GAP;
 
         hStaticCurrentUser = CreateWindowW(L"STATIC", L"👤 Текущий пользователь:",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -1653,6 +1793,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             ES_READONLY | ES_AUTOHSCROLL,
             M + 200 + 8, y, 220, UI_H,
             hWnd, (HMENU)ID_EDIT_CURRENT_USER, hInst, NULL);
+        ApplyExplorerTheme(hEditCurrentUser);
+        ApplyEditPadding(hEditCurrentUser, hWnd);
 
         CreateWindowW(L"BUTTON", L"🔄 Сменить пользователя",
             WS_CHILD | WS_VISIBLE,
@@ -1668,6 +1810,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
             M + 140 + 8, y, 600, UI_H,
             hWnd, (HMENU)ID_EDIT_KEY, hInst, NULL);
+        ApplyExplorerTheme(hEditKey);
+        ApplyEditPadding(hEditKey, hWnd);
 
         hStaticKeyLength = CreateWindowW(L"STATIC", L"0/64 символов",
             WS_CHILD | WS_VISIBLE,
@@ -1698,6 +1842,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
             M, y + UI_H + 6, HALF - M, BOX_H,
             hWnd, (HMENU)ID_EDIT_INPUT, hInst, NULL);
+        ApplyExplorerTheme(hEditInput);
+        ApplyEditPadding(hEditInput, hWnd);
 
         CreateWindowW(L"STATIC", L"📤 Результат:",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -1708,6 +1854,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
             M + HALF + M, y + UI_H + 6, HALF - M, BOX_H,
             hWnd, (HMENU)ID_EDIT_OUTPUT, hInst, NULL);
+        ApplyExplorerTheme(hEditOutput);
+        ApplyEditPadding(hEditOutput, hWnd);
         y += BOX_H + UI_H + 12;
 
         // Блок режимов (обмен вынесен в отдельное окно через меню)
@@ -1719,6 +1867,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
             M + 80 + 8, y, 220, 200,
             hWnd, (HMENU)200, hInst, NULL);
+        ApplyExplorerTheme(hComboMode);
 
         SendMessage(hComboMode, CB_ADDSTRING, 0, (LPARAM)L"ECB (простой)");
         SendMessage(hComboMode, CB_ADDSTRING, 0, (LPARAM)L"CBC (безопасный)");
@@ -1807,9 +1956,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         break;
     }
 
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground(hdc, rc);
+
+        RECT topCard = CombineRects(hWnd,
+            { hStaticCurrentUser, hEditCurrentUser, hEditKey, hStaticKeyLength }, ScaleByDpi(hWnd, 16));
+        DrawSoftCard(hWnd, hdc, topCard);
+
+        RECT textCard = CombineRects(hWnd, { hEditInput, hEditOutput }, ScaleByDpi(hWnd, 18));
+        DrawSoftCard(hWnd, hdc, textCard);
+
+        RECT actions = CombineRects(hWnd, { hComboMode, hBtnHelp, hBtnSaveStatus, hBtnOpenOutputDir, hBtnCopy }, ScaleByDpi(hWnd, 14));
+        DrawSoftCard(hWnd, hdc, actions);
+
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
+
     case WM_ERASEBKGND: {
         RECT rc; GetClientRect(hWnd, &rc);
-        FillRect((HDC)wParam, &rc, hBrushBgLight);
+        PaintGradientBackground((HDC)wParam, rc);
         return 1;
     }
     case WM_CTLCOLORSTATIC: {
@@ -2050,7 +2218,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
     hBrushBgWhite = CreateSolidBrush(C_BG_WHITE);
     hBrushRed = CreateSolidBrush(C_RED);
     hBrushBlue = CreateSolidBrush(C_BLUE);
-    hBrushGray = CreateSolidBrush(C_GRAY);
+    hBrushCard = CreateSolidBrush(C_CARD);
+    hBrushCardHeader = CreateSolidBrush(C_CARD_HEADER);
+    hPenCardBorder = CreatePen(PS_SOLID, 1, C_CARD_BORDER);
 
     if (!RegisterLoginClass(hInstance))   return FALSE;
     if (!MyRegisterClass(hInstance))      return FALSE;
@@ -2089,7 +2259,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
     if (hBrushBgWhite) DeleteObject(hBrushBgWhite);
     if (hBrushRed)     DeleteObject(hBrushRed);
     if (hBrushBlue)    DeleteObject(hBrushBlue);
-    if (hBrushGray)    DeleteObject(hBrushGray);
+    if (hBrushCard)    DeleteObject(hBrushCard);
+    if (hBrushCardHeader) DeleteObject(hBrushCardHeader);
+    if (hPenCardBorder) DeleteObject(hPenCardBorder);
 
     return (int)msg.wParam;
 }
