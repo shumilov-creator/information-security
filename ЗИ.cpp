@@ -1148,19 +1148,19 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         fTitle = CreateFontW(-Dpi(28), 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
         fSub = CreateFontW(-Dpi(16), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
 
-        const int W = Dpi(560), H = Dpi(360), M = Dpi(24), FW_ = W - 2 * M;
-        const int labelH = Dpi(22);
-        const int labelGap = Dpi(8);
-        const int inputH = Dpi(32);
+        const int W = Dpi(620), H = Dpi(420), M = Dpi(28), FW_ = W - 2 * M;
+        const int labelH = Dpi(24);
+        const int labelGap = Dpi(10);
+        const int inputH = Dpi(34);
         RECT r; GetWindowRect(GetDesktopWindow(), &r);
         SetWindowPos(hWnd, nullptr, (r.right - W) / 2, (r.bottom - H) / 3, W, H, SWP_NOZORDER | SWP_NOACTIVATE);
 
         int y = M;
-        stTitle = CreateWindowW(L"STATIC", L"Добро пожаловать", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, Dpi(34), hWnd, nullptr, hInst, nullptr);
-        SendMessage(stTitle, WM_SETFONT, (WPARAM)fTitle, TRUE); y += Dpi(34) + Dpi(4);
+        stTitle = CreateWindowW(L"STATIC", L"Добро пожаловать", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, Dpi(36), hWnd, nullptr, hInst, nullptr);
+        SendMessage(stTitle, WM_SETFONT, (WPARAM)fTitle, TRUE); y += Dpi(36) + Dpi(6);
 
-        stSub = CreateWindowW(L"STATIC", L"Войдите или создайте нового пользователя", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, Dpi(20), hWnd, nullptr, hInst, nullptr);
-        SendMessage(stSub, WM_SETFONT, (WPARAM)fSub, TRUE); y += Dpi(20) + Dpi(12);
+        stSub = CreateWindowW(L"STATIC", L"Войдите или создайте\nнового пользователя", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, Dpi(44), hWnd, nullptr, hInst, nullptr);
+        SendMessage(stSub, WM_SETFONT, (WPARAM)fSub, TRUE); y += Dpi(44) + Dpi(12);
 
         CreateWindowW(L"STATIC", L"👤 Имя пользователя", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, labelH, hWnd, nullptr, hInst, nullptr); y += labelH + labelGap;
 
@@ -2091,13 +2091,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         PaintGradientBackground(hdc, rc);
 
         RECT topCard = CombineRects(hWnd,
-            { hStaticCurrentUser, hEditCurrentUser, hEditKey, hStaticKeyLength }, ScaleByDpi(hWnd, 16));
+            { hStaticCurrentUser, hEditCurrentUser, hBtnChangeUser, hEditKey, hStaticKeyLength, hBtnGenerateKey }, ScaleByDpi(hWnd, 16));
+        InflateRect(&topCard, ScaleByDpi(hWnd, 6), ScaleByDpi(hWnd, 6));
         DrawSoftCard(hWnd, hdc, topCard);
 
         RECT textCard = CombineRects(hWnd, { hEditInput, hEditOutput }, ScaleByDpi(hWnd, 18));
+        textCard.top -= UI_H;
         DrawSoftCard(hWnd, hdc, textCard);
 
-        RECT actions = CombineRects(hWnd, { hComboMode, hBtnHelp }, ScaleByDpi(hWnd, 14));
+        RECT actions = CombineRects(hWnd, { hComboMode, hBtnHelp, hBtnEncrypt, hBtnDecryptLast, hBtnDecrypt, hBtnClear }, ScaleByDpi(hWnd, 14));
+        InflateRect(&actions, ScaleByDpi(hWnd, 8), ScaleByDpi(hWnd, 6));
         DrawSoftCard(hWnd, hdc, actions);
 
         EndPaint(hWnd, &ps);
