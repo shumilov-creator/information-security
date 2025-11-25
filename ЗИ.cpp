@@ -270,6 +270,7 @@ bool DrawStyledButton(LPDRAWITEMSTRUCT dis) {
 #define IDM_FILE_EXIT        602
 #define IDM_TOOLS_KEYS       610
 #define IDM_TOOLS_EXCHANGE   611
+#define IDM_TOOLS_OUTPUT_DIR 612
 
 // Prototypes
 void HandleEncryptDecrypt(HWND, bool, bool);
@@ -1914,6 +1915,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
         AppendMenuW(hToolsMenu, MF_STRING, ID_BTN_OPEN_KEYS_FILE, L"Менеджер ключей");
         AppendMenuW(hToolsMenu, MF_STRING, IDM_TOOLS_EXCHANGE, L"Обмен файлами");
+        AppendMenuW(hToolsMenu, MF_STRING, IDM_TOOLS_OUTPUT_DIR, L"Папка автосохранений");
 
         AppendMenuW(hMenuBar, MF_POPUP, (UINT_PTR)hFileMenu, L"&Файл");
         AppendMenuW(hMenuBar, MF_POPUP, (UINT_PTR)hToolsMenu, L"&Сервис");
@@ -2164,6 +2166,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         case IDM_TOOLS_EXCHANGE:
             OpenExchangeWindow(hWnd);
             return 0;
+        case IDM_TOOLS_OUTPUT_DIR: {
+            wstring dir = GetOutputDir();
+            if (!g_CurrentUser.empty()) dir += L"\\" + g_CurrentUser;
+            EnsureDirectoryExists(dir);
+            if (!OpenFolderInExplorer(dir))
+                MessageBoxW(hWnd, L"Не удалось открыть папку автосохранений.", L"Ошибка", MB_OK | MB_ICONERROR);
+            return 0;
+        }
 
         case ID_BTN_CHANGE_USER:
             ChangeUser(hWnd);
