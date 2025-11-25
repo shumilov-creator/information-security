@@ -39,7 +39,7 @@ using namespace std;
 // ------------------------
 HINSTANCE hInst;
 HWND hEditKey, hEditInput, hEditOutput, hBtnSaveStatus, hComboMode, hBtnCopy, hBtnOpenOutputDir, hBtnHelp, hStaticKeyLength;
-HWND hStaticCurrentUser, hEditCurrentUser, hStatusBar;
+HWND hStaticCurrentUser, hEditCurrentUser;
 HWND hExCombo, hExSend, hExRefresh, hExInList, hExOutList, hExOpenFolder;
 HFONT hFont, hFontTitle;
 HWND hTooltip;
@@ -126,6 +126,76 @@ void ApplyEditPadding(HWND hCtrl, HWND hWnd) {
     SendMessage(hCtrl, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(pad, pad));
 }
 
+const wchar_t* BTN_VARIANT_PROP = L"BTN_VARIANT";
+
+HWND CreateStyledButton(HWND hWnd, int controlId, const wchar_t* text, int x, int y, int w, int h, bool primary) {
+    HWND btn = CreateWindowW(L"BUTTON", text,
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+        x, y, w, h,
+        hWnd, (HMENU)controlId, hInst, NULL);
+    if (btn) {
+        SetPropW(btn, BTN_VARIANT_PROP, (HANDLE)(primary ? 1 : 2));
+    }
+    return btn;
+}
+
+bool DrawStyledButton(LPDRAWITEMSTRUCT dis) {
+    if (!dis || dis->CtlType != ODT_BUTTON) return false;
+
+    ULONG_PTR variant = (ULONG_PTR)GetPropW(dis->hwndItem, BTN_VARIANT_PROP);
+    if (variant != 1 && variant != 2) return false;
+
+    bool primary = variant == 1;
+    bool pressed = (dis->itemState & ODS_SELECTED) != 0;
+    bool disabled = (dis->itemState & ODS_DISABLED) != 0;
+    bool focused = (dis->itemState & ODS_FOCUS) != 0;
+
+    COLORREF base = primary ? RGB(64, 120, 255) : RGB(240, 243, 250);
+    COLORREF border = primary ? RGB(36, 90, 210) : RGB(210, 214, 226);
+    if (pressed) {
+        base = primary ? RGB(52, 101, 224) : RGB(226, 229, 238);
+        border = primary ? RGB(30, 76, 190) : RGB(195, 199, 210);
+    }
+    if (disabled) {
+        base = RGB(230, 230, 230);
+        border = RGB(200, 200, 200);
+    }
+
+    RECT rc = dis->rcItem;
+    HBRUSH br = CreateSolidBrush(base);
+    HPEN pen = CreatePen(PS_SOLID, 1, border);
+    HGDIOBJ oldPen = SelectObject(dis->hDC, pen);
+    HGDIOBJ oldBrush = SelectObject(dis->hDC, br);
+
+    RoundRect(dis->hDC, rc.left, rc.top, rc.right, rc.bottom, 10, 10);
+
+    SelectObject(dis->hDC, oldPen);
+    SelectObject(dis->hDC, oldBrush);
+    DeleteObject(pen);
+    DeleteObject(br);
+
+    int len = GetWindowTextLengthW(dis->hwndItem);
+    wstring caption(len + 1, L'\0');
+    GetWindowTextW(dis->hwndItem, caption.data(), len + 1);
+    caption.resize(len);
+
+    SetBkMode(dis->hDC, TRANSPARENT);
+    COLORREF textColor = primary ? RGB(255, 255, 255) : RGB(40, 46, 60);
+    if (disabled) textColor = RGB(150, 150, 150);
+    SetTextColor(dis->hDC, textColor);
+
+    RECT textRc = rc;
+    textRc.left += 12; textRc.right -= 12; textRc.top += 2; textRc.bottom -= 2;
+    if (pressed) OffsetRect(&textRc, 1, 1);
+    DrawTextW(dis->hDC, caption.c_str(), -1, &textRc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    if (focused) {
+        RECT focusRc = rc; InflateRect(&focusRc, -4, -4);
+        DrawFocusRect(dis->hDC, &focusRc);
+    }
+    return true;
+}
+
 // ------------------------
 // IDs
 // ------------------------
@@ -153,8 +223,6 @@ void ApplyEditPadding(HWND hCtrl, HWND hWnd) {
 #define ID_STATIC_CURRENT_USER     119
 #define ID_EDIT_CURRENT_USER       120
 #define ID_LOGIN_SHOWPASS          206
-#define ID_STATUSBAR               300
-
 // Exchange block
 #define ID_EXCH_COMBO              402
 #define ID_EXCH_SEND               403
@@ -814,7 +882,6 @@ void HandleOpenFile(HWND hWnd) {
         if (!in) { MessageBoxW(hWnd, L"Не удалось открыть файл.", L"Ошибка", MB_OK | MB_ICONERROR); return; }
         string buf((istreambuf_iterator<char>(in)), {});
         SetWindowTextW(hEditInput, UTF8ToWString(buf).c_str());
-        SendMessage(hStatusBar, SB_SETTEXT, 0, (LPARAM)L"Открыт файл");
     }
 }
 void HandleSaveResult(HWND hWnd) {
@@ -833,7 +900,6 @@ void HandleSaveResult(HWND hWnd) {
 
         if (SaveResultToFile(res, wstring(file), isEnc)) {
             SetWindowTextW(hBtnSaveStatus, L"📥 Сохранено вручную");
-            SendMessage(hStatusBar, SB_SETTEXT, 0, (LPARAM)L"Файл сохранён");
             MessageBoxW(hWnd, L"Файл успешно сохранён!", L"Успех", MB_OK | MB_ICONINFORMATION);
         }
         else {
@@ -1602,6 +1668,10 @@ LRESULT CALLBACK ExchangeWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
     }
 
+    case WM_DRAWITEM:
+        if (DrawStyledButton((LPDRAWITEMSTRUCT)lParam)) return TRUE;
+        break;
+
     case WM_COMMAND: {
         int id = LOWORD(wParam);
         int ev = HIWORD(wParam);
@@ -1791,10 +1861,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         ApplyExplorerTheme(hEditCurrentUser);
         ApplyEditPadding(hEditCurrentUser, hWnd);
 
-        CreateWindowW(L"BUTTON", L"🔄 Сменить пользователя",
-            WS_CHILD | WS_VISIBLE,
-            M + 200 + 8 + 220 + 8, y, UI_BTN + 30, UI_H,
-            hWnd, (HMENU)ID_BTN_CHANGE_USER, hInst, NULL);
+        CreateStyledButton(hWnd, ID_BTN_CHANGE_USER, L"🔄 Сменить пользователя",
+            M + 200 + 8 + 220 + 8, y, UI_BTN + 30, UI_H, false);
         y += UI_H + UI_GAP;
 
         CreateWindowW(L"STATIC", L"🔑 Ключ (64 HEX):",
@@ -1813,13 +1881,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             M + 140 + 8 + 600 + 8, y,
             120, UI_H, hWnd, (HMENU)ID_STATIC_KEY_LENGTH, hInst, NULL);
 
-        CreateWindowW(
-            L"BUTTON", L"🔧 Сгенерировать",
-            WS_CHILD | WS_VISIBLE,
-            M + 140 + 8 + 600 + 8 + 120 + 8, // X
-            y,                               // ← тут должна быть переменная Y
-            120, UI_H,                        // width, height
-            hWnd, (HMENU)ID_BTN_GENERATE_KEY, hInst, NULL);
+        CreateStyledButton(hWnd, ID_BTN_GENERATE_KEY, L"🔧 Сгенерировать",
+            M + 140 + 8 + 600 + 8 + 120 + 8,
+            y,
+            120, UI_H, false);
 
         RECT rc;
         GetClientRect(hWnd, &rc);
@@ -1869,10 +1934,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         SendMessage(hComboMode, CB_ADDSTRING, 0, (LPARAM)L"CFB (потоковый)");
         SendMessage(hComboMode, CB_SETCURSEL, 1, 0);
 
-        hBtnHelp = CreateWindowW(L"BUTTON", L"❓ Справка",
-            WS_CHILD | WS_VISIBLE,
-            M + 80 + 8 + 220 + 8, y, 100, UI_H,
-            hWnd, (HMENU)ID_BTN_HELP, hInst, NULL);
+        hBtnHelp = CreateStyledButton(hWnd, ID_BTN_HELP, L"❓ Справка",
+            M + 80 + 8 + 220 + 8, y, 100, UI_H, false);
+        y += UI_H + 8;
+
+        int utilityX = M;
+        int utilityGap = 14;
+        hBtnCopy = CreateStyledButton(hWnd, ID_BTN_COPY, L"📋 Копировать ключ",
+            utilityX, y, 200, UI_H, false);
+        utilityX += 200 + utilityGap;
+
+        hBtnSaveStatus = CreateStyledButton(hWnd, ID_BTN_SAVE_STATUS, L"💾 Сохранить",
+            utilityX, y, 160, UI_H, false);
+        utilityX += 160 + utilityGap;
+
+        hBtnOpenOutputDir = CreateStyledButton(hWnd, ID_BTN_OPEN_OUTPUT_DIR, L"📂 Выходные файлы",
+            utilityX, y, 200, UI_H, false);
+
         y += UI_H + 8;
 
         int WBTN = 170;
@@ -1880,40 +1958,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         int total = 4 * WBTN + 3 * GAP;
         int X = (W - total) / 2;
 
-        CreateWindowW(L"BUTTON", L"🔒 Зашифровать",
-            WS_CHILD | WS_VISIBLE,
-            X, y, WBTN, UI_H,
-            hWnd, (HMENU)ID_BTN_ENCRYPT, hInst, NULL);
+        CreateStyledButton(hWnd, ID_BTN_ENCRYPT, L"🔒 Зашифровать",
+            X, y, WBTN, UI_H, true);
 
-        CreateWindowW(L"BUTTON", L"🔓 Расшифровать последний",
-            WS_CHILD | WS_VISIBLE,
+        CreateStyledButton(hWnd, ID_BTN_DECRYPT_LAST, L"🔓 Расшифровать последний",
             X + WBTN + GAP, y, WBTN + 40, UI_H,
-            hWnd, (HMENU)ID_BTN_DECRYPT_LAST, hInst, NULL);
+            true);
 
-        CreateWindowW(L"BUTTON", L"🔓 Расшифровать",
-            WS_CHILD | WS_VISIBLE,
+        CreateStyledButton(hWnd, ID_BTN_DECRYPT, L"🔓 Расшифровать",
             X + WBTN + GAP + (WBTN + 40) + GAP, y,
-            WBTN, UI_H, hWnd, (HMENU)ID_BTN_DECRYPT, hInst, NULL);
+            WBTN, UI_H, true);
 
-        CreateWindowW(L"BUTTON", L"✂️ Очистить",
-            WS_CHILD | WS_VISIBLE,
+        CreateStyledButton(hWnd, ID_BTN_CLEAR, L"✂️ Очистить",
             X + WBTN + GAP + (WBTN + 40) + GAP + WBTN + GAP, y,
-            WBTN, UI_H, hWnd, (HMENU)ID_BTN_CLEAR, hInst, NULL);
-
-        hStatusBar = CreateWindowExW(0, STATUSCLASSNAMEW, NULL,
-            WS_CHILD | WS_VISIBLE,
-            0, 0, 0, 0,
-            hWnd, (HMENU)ID_STATUSBAR, hInst, NULL);
-        int parts[] = { 300, 600, -1 };
-        SendMessage(hStatusBar, SB_SETPARTS, (WPARAM)3, (LPARAM)parts);
-        SendMessage(hStatusBar, SB_SETTEXT, 0, (LPARAM)L"Готово");
-        SendMessage(hStatusBar, SB_SETTEXT, 1, (LPARAM)L"Режим: CBC");
-        SendMessage(hStatusBar, SB_SETTEXT, 2, (LPARAM)L"ГОСТ 28147-89 (без HMAC)");
+            WBTN, UI_H, false);
 
         HWND c = GetWindow(hWnd, GW_CHILD);
         while (c) {
-            if (c != hStatusBar)
-                SendMessage(c, WM_SETFONT, (WPARAM)hFont, TRUE);
+            SendMessage(c, WM_SETFONT, (WPARAM)hFont, TRUE);
             c = GetWindow(c, GW_HWNDNEXT);
         }
 
@@ -2000,6 +2062,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
     }
 
+    case WM_DRAWITEM:
+        if (DrawStyledButton((LPDRAWITEMSTRUCT)lParam)) return TRUE;
+        break;
+
     case WM_COMMAND: {
         int id = LOWORD(wParam);
         int ev = HIWORD(wParam);
@@ -2007,10 +2073,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         // смена режима
         if (id == 200 && ev == CBN_SELCHANGE) {
             int sel = (int)SendMessage(hComboMode, CB_GETCURSEL, 0, 0);
-            SendMessage(hStatusBar, SB_SETTEXT, 1,
-                (LPARAM)(sel == 0 ? L"Режим: ECB" :
-                    sel == 1 ? L"Режим: CBC" :
-                    L"Режим: CFB"));
             return 0;
         }
 
@@ -2057,7 +2119,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             UpdateKeyLengthIndicator(hWnd);
             if (!g_CurrentUser.empty())
                 SaveUserKey(g_CurrentUser, k, L"");
-            SendMessage(hStatusBar, SB_SETTEXT, 0, (LPARAM)L"Сгенерирован новый ключ");
             break;
         }
 
@@ -2073,7 +2134,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             SetWindowTextW(hEditOutput, L"");
             SetWindowTextW(hBtnSaveStatus, L"💾 Сохранить");
             g_LastInputText = L"";
-            SendMessage(hStatusBar, SB_SETTEXT, 0, (LPARAM)L"Очищено");
             break;
         }
 
@@ -2100,8 +2160,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
             if (!OpenFolderInExplorer(target))
                 MessageBoxW(hWnd, L"Не удалось открыть папку.", L"Ошибка", MB_OK | MB_ICONERROR);
-            else
-                SendMessage(hStatusBar, SB_SETTEXT, 0, (LPARAM)L"Папка открыта");
             break;
         }
 
@@ -2130,10 +2188,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         break;
     }
-
-    case WM_SIZE:
-        if (hStatusBar) SendMessage(hStatusBar, WM_SIZE, 0, 0);
-        break;
 
     case WM_DESTROY:
         DestroyWindow(hTooltip);
