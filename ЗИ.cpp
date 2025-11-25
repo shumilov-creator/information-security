@@ -159,6 +159,182 @@ void ApplyEditPadding(HWND hCtrl, HWND hWnd) {
 }
 
 // ------------------------
+// Styling helpers
+// ------------------------
+int ScaleByDpi(HWND hWnd, int px) {
+    UINT dpi = 96;
+    if (HMODULE hU = GetModuleHandleW(L"user32")) {
+        typedef UINT(WINAPI* FN)(HWND);
+        static FN get = (FN)GetProcAddress(hU, "GetDpiForWindow");
+        if (get) dpi = get(hWnd);
+    }
+    return MulDiv(px, (int)dpi, 96);
+}
+
+RECT GetChildRect(HWND parent, HWND child) {
+    RECT rc{ 0,0,0,0 };
+    if (!child) return rc;
+    GetWindowRect(child, &rc);
+    MapWindowPoints(NULL, parent, (POINT*)&rc, 2);
+    return rc;
+}
+
+RECT UnionRects(const RECT& a, const RECT& b) {
+    RECT r{};
+    r.left = min(a.left, b.left);
+    r.top = min(a.top, b.top);
+    r.right = max(a.right, b.right);
+    r.bottom = max(a.bottom, b.bottom);
+    return r;
+}
+
+RECT CombineRects(HWND parent, std::initializer_list<HWND> children, int padding) {
+    RECT combined{ 0,0,0,0 };
+    bool has = false;
+    for (HWND c : children) {
+        if (!c) continue;
+        RECT rc = GetChildRect(parent, c);
+        if (!has) { combined = rc; has = true; }
+        else combined = UnionRects(combined, rc);
+    }
+    if (!has) { SetRectEmpty(&combined); return combined; }
+    InflateRect(&combined, padding, padding);
+    return combined;
+}
+
+void PaintGradientBackground(HDC hdc, const RECT& rc) {
+    // Простая заливка без градиента для более строгого вида
+    FillRect(hdc, &rc, hBrushBgLight);
+}
+
+void DrawSoftCard(HWND parent, HDC hdc, const RECT& rc) {
+    if (IsRectEmpty(&rc)) return;
+    int radius = ScaleByDpi(parent, 10);
+
+    HPEN oldPen = (HPEN)SelectObject(hdc, hPenCardBorder);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, hBrushCard);
+
+    // корпус секции
+    RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, radius, radius);
+
+    // верхняя полоса для визуального разделения
+    RECT header = rc;
+    int inset = ScaleByDpi(parent, 6);
+    InflateRect(&header, -inset, 0);
+    header.bottom = min(header.bottom, header.top + ScaleByDpi(parent, 30));
+    FillRect(hdc, &header, hBrushCardHeader);
+
+    // линия под заголовком для ясной структуры
+    MoveToEx(hdc, header.left + ScaleByDpi(parent, 8), header.bottom, NULL);
+    LineTo(hdc, header.right - ScaleByDpi(parent, 8), header.bottom);
+
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+}
+
+void ApplyExplorerTheme(HWND hCtrl) {
+    if (hCtrl) SetWindowTheme(hCtrl, L"Explorer", NULL);
+}
+
+void ApplyEditPadding(HWND hCtrl, HWND hWnd) {
+    if (!hCtrl) return;
+    int pad = ScaleByDpi(hWnd, 8);
+    SendMessage(hCtrl, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(pad, pad));
+}
+
+// ------------------------
+// Styling helpers
+// ------------------------
+int ScaleByDpi(HWND hWnd, int px) {
+    UINT dpi = 96;
+    if (HMODULE hU = GetModuleHandleW(L"user32")) {
+        typedef UINT(WINAPI* FN)(HWND);
+        static FN get = (FN)GetProcAddress(hU, "GetDpiForWindow");
+        if (get) dpi = get(hWnd);
+    }
+    return MulDiv(px, (int)dpi, 96);
+}
+
+RECT GetChildRect(HWND parent, HWND child) {
+    RECT rc{ 0,0,0,0 };
+    if (!child) return rc;
+    GetWindowRect(child, &rc);
+    MapWindowPoints(NULL, parent, (POINT*)&rc, 2);
+    return rc;
+}
+
+RECT UnionRects(const RECT& a, const RECT& b) {
+    RECT r{};
+    r.left = min(a.left, b.left);
+    r.top = min(a.top, b.top);
+    r.right = max(a.right, b.right);
+    r.bottom = max(a.bottom, b.bottom);
+    return r;
+}
+
+RECT CombineRects(HWND parent, std::initializer_list<HWND> children, int padding) {
+    RECT combined{ 0,0,0,0 };
+    bool has = false;
+    for (HWND c : children) {
+        if (!c) continue;
+        RECT rc = GetChildRect(parent, c);
+        if (!has) { combined = rc; has = true; }
+        else combined = UnionRects(combined, rc);
+    }
+    if (!has) { SetRectEmpty(&combined); return combined; }
+    InflateRect(&combined, padding, padding);
+    return combined;
+}
+
+void PaintGradientBackground(HDC hdc, const RECT& rc) {
+    TRIVERTEX vert[2] = {
+        { rc.left, rc.top, (COLOR16)(GetRValue(C_BG_GRAD_TOP) << 8), (COLOR16)(GetGValue(C_BG_GRAD_TOP) << 8), (COLOR16)(GetBValue(C_BG_GRAD_TOP) << 8), 0 },
+        { rc.right, rc.bottom, (COLOR16)(GetRValue(C_BG_GRAD_BOTTOM) << 8), (COLOR16)(GetGValue(C_BG_GRAD_BOTTOM) << 8), (COLOR16)(GetBValue(C_BG_GRAD_BOTTOM) << 8), 0 }
+    };
+    GRADIENT_RECT g{ 0, 1 };
+    GradientFill(hdc, vert, 2, &g, 1, GRADIENT_FILL_RECT_V);
+}
+
+void DrawSoftCard(HWND parent, HDC hdc, const RECT& rc) {
+    if (IsRectEmpty(&rc)) return;
+    int radius = ScaleByDpi(parent, 14);
+    int shadowOffset = ScaleByDpi(parent, 4);
+
+    RECT shadow = rc;
+    OffsetRect(&shadow, shadowOffset, shadowOffset);
+    InflateRect(&shadow, ScaleByDpi(parent, 1), ScaleByDpi(parent, 1));
+
+    HPEN oldPen = (HPEN)SelectObject(hdc, hPenShadow);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, hBrushShadow);
+    RoundRect(hdc, shadow.left, shadow.top, shadow.right, shadow.bottom, radius + ScaleByDpi(parent, 4), radius + ScaleByDpi(parent, 4));
+
+    SelectObject(hdc, hPenCardBorder);
+    SelectObject(hdc, hBrushCard);
+    RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, radius, radius);
+
+    RECT header = rc;
+    header.bottom = min(header.bottom, header.top + ScaleByDpi(parent, 26));
+    FillRect(hdc, &header, hBrushCardHeader);
+
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+
+    RECT accent = rc;
+    accent.right = accent.left + ScaleByDpi(parent, 6);
+    FillRect(hdc, &accent, hBrushAccent);
+}
+
+void ApplyExplorerTheme(HWND hCtrl) {
+    if (hCtrl) SetWindowTheme(hCtrl, L"Explorer", NULL);
+}
+
+void ApplyEditPadding(HWND hCtrl, HWND hWnd) {
+    if (!hCtrl) return;
+    int pad = ScaleByDpi(hWnd, 8);
+    SendMessage(hCtrl, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(pad, pad));
+}
+
+// ------------------------
 // IDs
 // ------------------------
 #define ID_BTN_OPEN_KEYS_FILE      107
@@ -928,6 +1104,27 @@ void Exchange_UpdateAllRecipients() {
     Exchange_RebuildRecipientsCombo(L"", false);
 }
 
+bool Exchange_ExtractKeyAndPayload(const wstring& fileData, wstring& keyOut, wstring& payloadOut) {
+    size_t nl = fileData.find(L'\n');
+    if (nl == wstring::npos) return false;
+
+    wstring firstLine = fileData.substr(0, nl);
+    firstLine.erase(remove(firstLine.begin(), firstLine.end(), L'\r'), firstLine.end());
+    wstring trimmed = TrimWString(firstLine);
+
+    wstring lower = trimmed;
+    transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
+    if (lower.rfind(L"key:", 0) != 0) return false;
+
+    wstring candidate = NormalizeHex64(trimmed.substr(4));
+    if (!ValidateKey(candidate)) return false;
+
+    wstring rest = fileData.substr(nl + 1);
+    payloadOut = TrimWString(rest);
+    keyOut = candidate;
+    return !payloadOut.empty();
+}
+
 bool Exchange_SendTo(const wstring& recipient, const wstring& textToSend, int mode) {
     if (recipient.empty()) return false;
     if (!UserExists(recipient)) return false;
@@ -937,6 +1134,8 @@ bool Exchange_SendTo(const wstring& recipient, const wstring& textToSend, int mo
     vector<uint8_t> key = hexStringToBytes(recKey);
     vector<uint8_t> cont = GostEncryptContainer(textToSend, key, mode);
     wstring b64 = UTF8ToWString(Base64Encode(cont));
+
+    wstring fileContent = L"KEY:" + recKey + L"\r\n" + b64;
 
     wstring base = GetExchangeDir();
     wstring inRec = base + L"\\" + recipient + L"\\Inbox";
@@ -949,7 +1148,7 @@ bool Exchange_SendTo(const wstring& recipient, const wstring& textToSend, int mo
         << setw(2) << st.wHour << setw(2) << st.wMinute;
     wstring fname = L"from_" + g_CurrentUser + L"_to_" + recipient + L"_" + ts.str() + L"_" + to_wstring(++g_FileCounter) + L".txt";
 
-    auto writeFile = [&](const wstring& dir) { ofstream f(dir + L"\\" + fname, ios::binary); if (!f) return false; f << WStringToUTF8(b64); return true; };
+    auto writeFile = [&](const wstring& dir) { ofstream f(dir + L"\\" + fname, ios::binary); if (!f) return false; f << WStringToUTF8(fileContent); return true; };
     bool ok1 = writeFile(inRec), ok2 = writeFile(outMe);
     return ok1 && ok2;
 }
@@ -1379,6 +1578,26 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         return 0;
     }
 
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground(hdc, rc);
+        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { stUser, lv }, ScaleByDpi(hWnd, 14)));
+        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { bCopy, bDel, bRef, bImp, bExp, bRen, bSetCur }, ScaleByDpi(hWnd, 12)));
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground(hdc, rc);
+        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { stUser, lv }, ScaleByDpi(hWnd, 14)));
+        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { bCopy, bDel, bRef, bImp, bExp, bRen, bSetCur }, ScaleByDpi(hWnd, 12)));
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
+
     case WM_NOTIFY: {
         LPNMHDR hdr = (LPNMHDR)lParam;
         if (hdr->idFrom == ID_KEYS_LISTVIEW && hdr->code == NM_DBLCLK) {
@@ -1633,7 +1852,16 @@ LRESULT CALLBACK ExchangeWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
                 ifstream in(path, ios::binary);
                 if (in) {
                     string buf((istreambuf_iterator<char>(in)), {});
-                    SetWindowTextW(hEditInput, UTF8ToWString(buf).c_str());
+                    wstring fileData = UTF8ToWString(buf);
+                    wstring keyFromFile, payload;
+                    if (Exchange_ExtractKeyAndPayload(fileData, keyFromFile, payload)) {
+                        SetWindowTextW(hEditKey, keyFromFile.c_str());
+                        UpdateKeyLengthIndicator(GetParent(hWnd));
+                        SetWindowTextW(hEditInput, payload.c_str());
+                    }
+                    else {
+                        SetWindowTextW(hEditInput, fileData.c_str());
+                    }
                     MessageBoxW(hWnd, L"Текст загружен в левое поле основного окна.", L"Обмен", MB_OK | MB_ICONINFORMATION);
                 }
             }
