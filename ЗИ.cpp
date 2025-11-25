@@ -18,12 +18,16 @@
 #include <wincrypt.h>
 #include <bcrypt.h>
 #include <uxtheme.h>
+#include <cstring>
 
 #pragma comment(lib, "Comdlg32.lib")
 #pragma comment(lib, "Shlwapi.lib")
 #pragma comment(lib, "Comctl32.lib")
+#pragma comment(lib, "Shell32.lib")
+#pragma comment(lib, "Ole32.lib")
 #pragma comment(lib, "Bcrypt.lib")
 #pragma comment(lib, "Crypt32.lib")
+#pragma comment(lib, "UxTheme.lib")
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -69,6 +73,90 @@ const int UI_H = 30;
 const int UI_PAD = 12;
 const int UI_GAP = 10;
 const int UI_BTN = 160;
+
+// ------------------------
+// Styling helpers
+// ------------------------
+int ScaleByDpi(HWND hWnd, int px) {
+    UINT dpi = 96;
+    if (HMODULE hU = GetModuleHandleW(L"user32")) {
+        typedef UINT(WINAPI* FN)(HWND);
+        static FN get = (FN)GetProcAddress(hU, "GetDpiForWindow");
+        if (get) dpi = get(hWnd);
+    }
+    return MulDiv(px, (int)dpi, 96);
+}
+
+RECT GetChildRect(HWND parent, HWND child) {
+    RECT rc{ 0,0,0,0 };
+    if (!child) return rc;
+    GetWindowRect(child, &rc);
+    MapWindowPoints(NULL, parent, (POINT*)&rc, 2);
+    return rc;
+}
+
+RECT UnionRects(const RECT& a, const RECT& b) {
+    RECT r{};
+    r.left = min(a.left, b.left);
+    r.top = min(a.top, b.top);
+    r.right = max(a.right, b.right);
+    r.bottom = max(a.bottom, b.bottom);
+    return r;
+}
+
+RECT CombineRects(HWND parent, std::initializer_list<HWND> children, int padding) {
+    RECT combined{ 0,0,0,0 };
+    bool has = false;
+    for (HWND c : children) {
+        if (!c) continue;
+        RECT rc = GetChildRect(parent, c);
+        if (!has) { combined = rc; has = true; }
+        else combined = UnionRects(combined, rc);
+    }
+    if (!has) { SetRectEmpty(&combined); return combined; }
+    InflateRect(&combined, padding, padding);
+    return combined;
+}
+
+void PaintGradientBackground(HDC hdc, const RECT& rc) {
+    // Простая заливка без градиента для более строгого вида
+    FillRect(hdc, &rc, hBrushBgLight);
+}
+
+void DrawSoftCard(HWND parent, HDC hdc, const RECT& rc) {
+    if (IsRectEmpty(&rc)) return;
+    int radius = ScaleByDpi(parent, 10);
+
+    HPEN oldPen = (HPEN)SelectObject(hdc, hPenCardBorder);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, hBrushCard);
+
+    // корпус секции
+    RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, radius, radius);
+
+    // верхняя полоса для визуального разделения
+    RECT header = rc;
+    int inset = ScaleByDpi(parent, 6);
+    InflateRect(&header, -inset, 0);
+    header.bottom = min(header.bottom, header.top + ScaleByDpi(parent, 30));
+    FillRect(hdc, &header, hBrushCardHeader);
+
+    // линия под заголовком для ясной структуры
+    MoveToEx(hdc, header.left + ScaleByDpi(parent, 8), header.bottom, NULL);
+    LineTo(hdc, header.right - ScaleByDpi(parent, 8), header.bottom);
+
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+}
+
+void ApplyExplorerTheme(HWND hCtrl) {
+    if (hCtrl) SetWindowTheme(hCtrl, L"Explorer", NULL);
+}
+
+void ApplyEditPadding(HWND hCtrl, HWND hWnd) {
+    if (!hCtrl) return;
+    int pad = ScaleByDpi(hWnd, 8);
+    SendMessage(hCtrl, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(pad, pad));
+}
 
 // ------------------------
 // Styling helpers
@@ -1479,6 +1567,16 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     case WM_SIZE:
         Layout(hWnd);
         return 0;
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground(hdc, rc);
+        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { stUser, lv }, ScaleByDpi(hWnd, 14)));
+        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { bCopy, bDel, bRef, bImp, bExp, bRen, bSetCur }, ScaleByDpi(hWnd, 12)));
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
 
     case WM_PAINT: {
         PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
