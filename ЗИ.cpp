@@ -1083,6 +1083,8 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         fSub = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
 
         const int W = 560, H = 320, M = 24, FW_ = W - 2 * M;
+        const int labelH = 22;
+        const int labelGap = 8;
         RECT r; GetWindowRect(GetDesktopWindow(), &r);
         SetWindowPos(hWnd, nullptr, (r.right - W) / 2, (r.bottom - H) / 3, W, H, SWP_NOZORDER | SWP_NOACTIVATE);
 
@@ -1093,14 +1095,14 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         stSub = CreateWindowW(L"STATIC", L"Войдите или создайте нового пользователя", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, 20, hWnd, nullptr, hInst, nullptr);
         SendMessage(stSub, WM_SETFONT, (WPARAM)fSub, TRUE); y += 20 + 12;
 
-        CreateWindowW(L"STATIC", L"👤 Имя пользователя", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, 18, hWnd, nullptr, hInst, nullptr); y += 18 + 6;
+        CreateWindowW(L"STATIC", L"👤 Имя пользователя", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, labelH, hWnd, nullptr, hInst, nullptr); y += labelH + labelGap;
 
         cbUser = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | CBS_DROPDOWN | CBS_AUTOHSCROLL, M, y, FW_, 200, hWnd, (HMENU)ID_LOGIN_EDIT_USER, hInst, nullptr);
         ApplyExplorerTheme(cbUser);
         ApplyEditPadding(cbUser, hWnd);
         y += 32 + 12;
 
-        CreateWindowW(L"STATIC", L"🔑 Пароль", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, 18, hWnd, nullptr, hInst, nullptr); y += 18 + 6;
+        CreateWindowW(L"STATIC", L"🔑 Пароль", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, labelH, hWnd, nullptr, hInst, nullptr); y += labelH + labelGap;
 
         const int showW = 110;
         ePass = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD, M, y, FW_ - showW - 8, 30, hWnd, (HMENU)ID_LOGIN_EDIT_PASSWORD, hInst, nullptr);
