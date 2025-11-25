@@ -1402,26 +1402,6 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         return 0;
     }
 
-    case WM_PAINT: {
-        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
-        RECT rc; GetClientRect(hWnd, &rc);
-        PaintGradientBackground(hdc, rc);
-        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { stUser, lv }, ScaleByDpi(hWnd, 14)));
-        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { bCopy, bDel, bRef, bImp, bExp, bRen, bSetCur }, ScaleByDpi(hWnd, 12)));
-        EndPaint(hWnd, &ps);
-        return 0;
-    }
-
-    case WM_PAINT: {
-        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
-        RECT rc; GetClientRect(hWnd, &rc);
-        PaintGradientBackground(hdc, rc);
-        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { stUser, lv }, ScaleByDpi(hWnd, 14)));
-        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { bCopy, bDel, bRef, bImp, bExp, bRen, bSetCur }, ScaleByDpi(hWnd, 12)));
-        EndPaint(hWnd, &ps);
-        return 0;
-    }
-
     case WM_NOTIFY: {
         LPNMHDR hdr = (LPNMHDR)lParam;
         if (hdr->idFrom == ID_KEYS_LISTVIEW && hdr->code == NM_DBLCLK) {
