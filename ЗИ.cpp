@@ -1159,7 +1159,7 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         stTitle = CreateWindowW(L"STATIC", L"Добро пожаловать", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, Dpi(36), hWnd, nullptr, hInst, nullptr);
         SendMessage(stTitle, WM_SETFONT, (WPARAM)fTitle, TRUE); y += Dpi(36) + Dpi(6);
 
-        stSub = CreateWindowW(L"STATIC", L"Войдите или создайте\nнового пользователя", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, Dpi(44), hWnd, nullptr, hInst, nullptr);
+        stSub = CreateWindowW(L"STATIC", L"Войдите или создайте учетную запись", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, Dpi(44), hWnd, nullptr, hInst, nullptr);
         SendMessage(stSub, WM_SETFONT, (WPARAM)fSub, TRUE); y += Dpi(44) + Dpi(12);
 
         CreateWindowW(L"STATIC", L"👤 Имя пользователя", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, labelH, hWnd, nullptr, hInst, nullptr); y += labelH + labelGap;
@@ -1174,7 +1174,7 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         CreateWindowW(L"STATIC", L"🔑 Пароль", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, labelH, hWnd, nullptr, hInst, nullptr); y += labelH + labelGap;
 
-        const int showW = Dpi(120);
+        const int showW = Dpi(140);
         ePass = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD, M, y, FW_ - showW - Dpi(8), inputH, hWnd, (HMENU)ID_LOGIN_EDIT_PASSWORD, hInst, nullptr);
         SendMessage(ePass, EM_SETPASSWORDCHAR, (WPARAM)L'•', 0);
         ApplyExplorerTheme(ePass);
@@ -1200,8 +1200,6 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
         RECT rc; GetClientRect(hWnd, &rc);
         PaintGradientBackground(hdc, rc);
-        RECT card = CombineRects(hWnd, { stTitle, stSub, cbUser, stUserError, ePass, stPassError, bOk, bNew, bShow }, ScaleByDpi(hWnd, 16));
-        DrawSoftCard(hWnd, hdc, card);
         EndPaint(hWnd, &ps);
         return 0;
     }
@@ -1529,8 +1527,6 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
         RECT rc; GetClientRect(hWnd, &rc);
         PaintGradientBackground(hdc, rc);
-        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { stUser, lv }, ScaleByDpi(hWnd, 14)));
-        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { bCopy, bDel, bRef, bImp, bExp, bRen, bSetCur }, ScaleByDpi(hWnd, 12)));
         EndPaint(hWnd, &ps);
         return 0;
     }
@@ -1737,8 +1733,6 @@ LRESULT CALLBACK ExchangeWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
         RECT rc; GetClientRect(hWnd, &rc);
         PaintGradientBackground(hdc, rc);
-        RECT lists = CombineRects(hWnd, { hExCombo, hExSend, hExInList, hExOutList, hExRefresh, hExOpenFolder }, ScaleByDpi(hWnd, 14));
-        DrawSoftCard(hWnd, hdc, lists);
         EndPaint(hWnd, &ps);
         return 0;
     }
@@ -2089,19 +2083,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
         RECT rc; GetClientRect(hWnd, &rc);
         PaintGradientBackground(hdc, rc);
-
-        RECT topCard = CombineRects(hWnd,
-            { hStaticCurrentUser, hEditCurrentUser, hBtnChangeUser, hEditKey, hStaticKeyLength, hBtnGenerateKey }, ScaleByDpi(hWnd, 16));
-        InflateRect(&topCard, ScaleByDpi(hWnd, 6), ScaleByDpi(hWnd, 6));
-        DrawSoftCard(hWnd, hdc, topCard);
-
-        RECT textCard = CombineRects(hWnd, { hEditInput, hEditOutput }, ScaleByDpi(hWnd, 18));
-        textCard.top -= UI_H;
-        DrawSoftCard(hWnd, hdc, textCard);
-
-        RECT actions = CombineRects(hWnd, { hComboMode, hBtnHelp, hBtnEncrypt, hBtnDecryptLast, hBtnDecrypt, hBtnClear }, ScaleByDpi(hWnd, 14));
-        InflateRect(&actions, ScaleByDpi(hWnd, 8), ScaleByDpi(hWnd, 6));
-        DrawSoftCard(hWnd, hdc, actions);
 
         EndPaint(hWnd, &ps);
         return 0;
