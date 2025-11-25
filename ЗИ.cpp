@@ -445,6 +445,9 @@ bool OpenFolderInExplorer(const wstring& dir) {
 }
 
 // DPAPI
+void SecureClear(vector<uint8_t>& buf) {
+    if (!buf.empty()) SecureZeroMemory(buf.data(), buf.size());
+}
 bool DPAPI_Protect(const vector<uint8_t>& in, vector<uint8_t>& out) {
     DATA_BLOB a{ (DWORD)in.size(), (BYTE*)in.data() }, b{};
     if (!CryptProtectData(&a, L"", NULL, NULL, NULL, 0, &b)) return false;
@@ -466,7 +469,9 @@ bool DPAPI_Unprotect(const vector<uint8_t>& in, vector<uint8_t>& out) {
 void SaveUserPassword(const wstring& user, const wstring& pass) {
     if (user.empty() || pass.empty()) return;
     vector<uint8_t> plain((uint8_t*)pass.data(), (uint8_t*)pass.data() + pass.size() * sizeof(wchar_t)), prot;
-    if (!DPAPI_Protect(plain, prot)) return;
+    bool ok = DPAPI_Protect(plain, prot);
+    SecureClear(plain);
+    if (!ok) return;
     wstring path = BASE_DIR_PATH + L"\\" + PASSWORDS_FILENAME;
     EnsureDirectoryExists(BASE_DIR_PATH);
     ifstream fin(path, ios::binary);
@@ -481,6 +486,7 @@ void SaveUserPassword(const wstring& user, const wstring& pass) {
     }
     fin.close();
     if (!found) buf += WStringToUTF8(prefix) + Base64Encode(prot) + "\n";
+    SecureClear(prot);
     ofstream fout(path, ios::binary); if (fout) fout << buf;
 }
 wstring LoadUserPassword(const wstring& user) {
@@ -495,8 +501,15 @@ wstring LoadUserPassword(const wstring& user) {
         if (wl.rfind(prefix, 0) == 0) {
             string b = WStringToUTF8(wl.substr(prefix.length()));
             vector<uint8_t> blob = Base64Decode(b), plain;
-            if (blob.empty() || !DPAPI_Unprotect(blob, plain) || plain.size() % sizeof(wchar_t)) return L"";
-            return wstring((wchar_t*)plain.data(), plain.size() / sizeof(wchar_t));
+            if (blob.empty() || !DPAPI_Unprotect(blob, plain) || plain.size() % sizeof(wchar_t)) {
+                SecureClear(blob);
+                SecureClear(plain);
+                return L"";
+            }
+            wstring result((wchar_t*)plain.data(), plain.size() / sizeof(wchar_t));
+            SecureClear(blob);
+            SecureClear(plain);
+            return result;
         }
     }
     return L"";
