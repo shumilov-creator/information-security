@@ -17,12 +17,14 @@
 #include <commctrl.h>
 #include <wincrypt.h>
 #include <bcrypt.h>
+#include <uxtheme.h>
 
 #pragma comment(lib, "Comdlg32.lib")
 #pragma comment(lib, "Shlwapi.lib")
 #pragma comment(lib, "Comctl32.lib")
 #pragma comment(lib, "Bcrypt.lib")
 #pragma comment(lib, "Crypt32.lib")
+#pragma comment(lib, "Msimg32.lib")
 #pragma comment(linker,"\"/manifestdependency:type='win32' \
 name='Microsoft.Windows.Common-Controls' version='6.0.0.0' \
 processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
@@ -38,6 +40,8 @@ HWND hStaticCurrentUser, hEditCurrentUser, hStatusBar;
 HWND hExCombo, hExSend, hExRefresh, hExInList, hExOutList, hExOpenFolder;
 HFONT hFont, hFontTitle, hFontSmall;
 HBRUSH hBrushBgLight, hBrushBgWhite, hBrushRed, hBrushBlue, hBrushGray;
+HBRUSH hBrushCard, hBrushAccent;
+HPEN   hPenCardBorder;
 HWND hTooltip;
 
 wstring BASE_DIR_PATH = L"";
@@ -59,11 +63,83 @@ const COLORREF C_BG_WHITE = RGB(255, 255, 255);
 const COLORREF C_GRAY = RGB(225, 230, 235);
 const COLORREF C_RED = RGB(255, 224, 224);
 const COLORREF C_TEXT = RGB(45, 45, 45);
+const COLORREF C_BG_GRAD_TOP = RGB(252, 253, 255);
+const COLORREF C_BG_GRAD_BOTTOM = RGB(232, 238, 248);
+const COLORREF C_CARD = RGB(255, 255, 255);
+const COLORREF C_CARD_BORDER = RGB(208, 218, 232);
+const COLORREF C_ACCENT = RGB(196, 219, 255);
 
 const int UI_H = 30;
 const int UI_PAD = 12;
 const int UI_GAP = 10;
 const int UI_BTN = 160;
+
+// ------------------------
+// Styling helpers
+// ------------------------
+int ScaleByDpi(HWND hWnd, int px) {
+    UINT dpi = 96;
+    if (HMODULE hU = GetModuleHandleW(L"user32")) {
+        typedef UINT(WINAPI* FN)(HWND);
+        static FN get = (FN)GetProcAddress(hU, "GetDpiForWindow");
+        if (get) dpi = get(hWnd);
+    }
+    return MulDiv(px, (int)dpi, 96);
+}
+
+RECT GetChildRect(HWND parent, HWND child) {
+    RECT rc{ 0,0,0,0 };
+    if (!child) return rc;
+    GetWindowRect(child, &rc);
+    MapWindowPoints(NULL, parent, (POINT*)&rc, 2);
+    return rc;
+}
+
+RECT UnionRects(const RECT& a, const RECT& b) {
+    RECT r{};
+    r.left = min(a.left, b.left);
+    r.top = min(a.top, b.top);
+    r.right = max(a.right, b.right);
+    r.bottom = max(a.bottom, b.bottom);
+    return r;
+}
+
+RECT CombineRects(HWND parent, std::initializer_list<HWND> children, int padding) {
+    RECT combined{ 0,0,0,0 };
+    bool has = false;
+    for (HWND c : children) {
+        if (!c) continue;
+        RECT rc = GetChildRect(parent, c);
+        if (!has) { combined = rc; has = true; }
+        else combined = UnionRects(combined, rc);
+    }
+    if (!has) { SetRectEmpty(&combined); return combined; }
+    InflateRect(&combined, padding, padding);
+    return combined;
+}
+
+void PaintGradientBackground(HDC hdc, const RECT& rc) {
+    TRIVERTEX vert[2] = {
+        { rc.left, rc.top, (COLOR16)(GetRValue(C_BG_GRAD_TOP) << 8), (COLOR16)(GetGValue(C_BG_GRAD_TOP) << 8), (COLOR16)(GetBValue(C_BG_GRAD_TOP) << 8), 0 },
+        { rc.right, rc.bottom, (COLOR16)(GetRValue(C_BG_GRAD_BOTTOM) << 8), (COLOR16)(GetGValue(C_BG_GRAD_BOTTOM) << 8), (COLOR16)(GetBValue(C_BG_GRAD_BOTTOM) << 8), 0 }
+    };
+    GRADIENT_RECT g{ 0, 1 };
+    GradientFill(hdc, vert, 2, &g, 1, GRADIENT_FILL_RECT_V);
+}
+
+void DrawSoftCard(HWND parent, HDC hdc, const RECT& rc) {
+    if (IsRectEmpty(&rc)) return;
+    int radius = ScaleByDpi(parent, 12);
+    HPEN oldPen = (HPEN)SelectObject(hdc, hPenCardBorder);
+    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, hBrushCard);
+    RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, radius, radius);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+
+    RECT accent = rc;
+    accent.right = accent.left + ScaleByDpi(parent, 6);
+    FillRect(hdc, &accent, hBrushAccent);
+}
 
 // ------------------------
 // IDs
@@ -958,8 +1034,17 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         for (HWND c = GetWindow(hWnd, GW_CHILD); c; c = GetWindow(c, GW_HWNDNEXT)) SendMessage(c, WM_SETFONT, (WPARAM)base, TRUE);
         FillUsers(); SetFocus(cbUser); return 0;
     }
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground(hdc, rc);
+        RECT card = CombineRects(hWnd, { stTitle, stSub, cbUser, ePass, bOk, bNew, bShow }, ScaleByDpi(hWnd, 16));
+        DrawSoftCard(hWnd, hdc, card);
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
     case WM_ERASEBKGND: {
-        RECT rc; GetClientRect(hWnd, &rc); FillRect((HDC)wParam, &rc, hBrushBgLight); return 1;
+        RECT rc; GetClientRect(hWnd, &rc); PaintGradientBackground((HDC)wParam, rc); return 1;
     }
     case WM_CTLCOLORSTATIC: {
         HDC hdc = (HDC)wParam; SetTextColor(hdc, C_TEXT); SetBkMode(hdc, TRANSPARENT); return (LRESULT)hBrushBgLight;
@@ -1260,6 +1345,16 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         Layout(hWnd);
         return 0;
 
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground(hdc, rc);
+        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { stUser, lv }, ScaleByDpi(hWnd, 14)));
+        DrawSoftCard(hWnd, hdc, CombineRects(hWnd, { bCopy, bDel, bRef, bImp, bExp, bRen, bSetCur }, ScaleByDpi(hWnd, 12)));
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
+
     case WM_NOTIFY: {
         LPNMHDR hdr = (LPNMHDR)lParam;
         if (hdr->idFrom == ID_KEYS_LISTVIEW && hdr->code == NM_DBLCLK) {
@@ -1336,6 +1431,12 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     case WM_DESTROY:
         if (hImg) { ImageList_Destroy(hImg); hImg = NULL; }
         return 0;
+
+    case WM_ERASEBKGND: {
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground((HDC)wParam, rc);
+        return 1;
+    }
     }
 
     return DefWindowProc(hWnd, msg, wParam, lParam);
@@ -1448,10 +1549,19 @@ LRESULT CALLBACK ExchangeWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
         Exchange_RefreshOutboxList();
         return 0;
     }
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground(hdc, rc);
+        RECT lists = CombineRects(hWnd, { hExCombo, hExSend, hExInList, hExOutList, hExRefresh, hExOpenFolder }, ScaleByDpi(hWnd, 14));
+        DrawSoftCard(hWnd, hdc, lists);
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
 
     case WM_ERASEBKGND: {
         RECT rc; GetClientRect(hWnd, &rc);
-        FillRect((HDC)wParam, &rc, hBrushBgLight);
+        PaintGradientBackground((HDC)wParam, rc);
         return 1;
     }
     case WM_CTLCOLORSTATIC: {
@@ -1807,9 +1917,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         break;
     }
 
+    case WM_PAINT: {
+        PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
+        RECT rc; GetClientRect(hWnd, &rc);
+        PaintGradientBackground(hdc, rc);
+
+        RECT topCard = CombineRects(hWnd,
+            { hStaticCurrentUser, hEditCurrentUser, hEditKey, hStaticKeyLength }, ScaleByDpi(hWnd, 16));
+        DrawSoftCard(hWnd, hdc, topCard);
+
+        RECT textCard = CombineRects(hWnd, { hEditInput, hEditOutput }, ScaleByDpi(hWnd, 18));
+        DrawSoftCard(hWnd, hdc, textCard);
+
+        RECT actions = CombineRects(hWnd, { hComboMode, hBtnHelp, hBtnSaveStatus, hBtnOpenOutputDir, hBtnCopy }, ScaleByDpi(hWnd, 14));
+        DrawSoftCard(hWnd, hdc, actions);
+
+        EndPaint(hWnd, &ps);
+        return 0;
+    }
+
     case WM_ERASEBKGND: {
         RECT rc; GetClientRect(hWnd, &rc);
-        FillRect((HDC)wParam, &rc, hBrushBgLight);
+        PaintGradientBackground((HDC)wParam, rc);
         return 1;
     }
     case WM_CTLCOLORSTATIC: {
@@ -2051,6 +2180,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
     hBrushRed = CreateSolidBrush(C_RED);
     hBrushBlue = CreateSolidBrush(C_BLUE);
     hBrushGray = CreateSolidBrush(C_GRAY);
+    hBrushCard = CreateSolidBrush(C_CARD);
+    hBrushAccent = CreateSolidBrush(C_ACCENT);
+    hPenCardBorder = CreatePen(PS_SOLID, 1, C_CARD_BORDER);
 
     if (!RegisterLoginClass(hInstance))   return FALSE;
     if (!MyRegisterClass(hInstance))      return FALSE;
@@ -2090,6 +2222,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
     if (hBrushRed)     DeleteObject(hBrushRed);
     if (hBrushBlue)    DeleteObject(hBrushBlue);
     if (hBrushGray)    DeleteObject(hBrushGray);
+    if (hBrushCard)    DeleteObject(hBrushCard);
+    if (hBrushAccent)  DeleteObject(hBrushAccent);
+    if (hPenCardBorder) DeleteObject(hPenCardBorder);
 
     return (int)msg.wParam;
 }
