@@ -40,6 +40,7 @@ using namespace std;
 HINSTANCE hInst;
 HWND hEditKey, hEditInput, hEditOutput, hComboMode, hBtnHelp, hStaticKeyLength;
 HWND hStaticCurrentUser, hEditCurrentUser;
+HWND hBtnEncrypt, hBtnDecrypt, hBtnDecryptLast, hBtnClear, hBtnGenerateKey, hBtnChangeUser;
 HWND hExCombo, hExSend, hExRefresh, hExInList, hExOutList, hExOpenFolder;
 HFONT hFont;
 HWND hTooltip;
@@ -112,8 +113,32 @@ void PaintGradientBackground(HDC hdc, const RECT& rc) {
     FillRect(hdc, &rc, GetSysColorBrush(COLOR_WINDOW));
 }
 
-void DrawSoftCard(HWND, HDC, const RECT&) {
-    // Дополнительное декоративное оформление отключено
+void DrawSoftCard(HWND hWnd, HDC hdc, const RECT& rc) {
+    if (IsRectEmpty(&rc)) return;
+
+    const int radius = ScaleByDpi(hWnd, 12);
+    const int shadow = ScaleByDpi(hWnd, 6);
+
+    // Лёгкая тень
+    RECT shadowRc = rc;
+    OffsetRect(&shadowRc, shadow, shadow);
+    InflateRect(&shadowRc, shadow / 2, shadow / 2);
+    HBRUSH shadowBr = CreateSolidBrush(RGB(220, 222, 228));
+    FillRect(hdc, &shadowRc, shadowBr);
+    DeleteObject(shadowBr);
+
+    // Карточка
+    HBRUSH bg = CreateSolidBrush(RGB(250, 252, 255));
+    HPEN border = CreatePen(PS_SOLID, 1, RGB(214, 218, 228));
+    HGDIOBJ oldBr = SelectObject(hdc, bg);
+    HGDIOBJ oldPen = SelectObject(hdc, border);
+
+    RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, radius, radius);
+
+    SelectObject(hdc, oldBr);
+    SelectObject(hdc, oldPen);
+    DeleteObject(bg);
+    DeleteObject(border);
 }
 
 void ApplyExplorerTheme(HWND hCtrl) {
@@ -918,9 +943,28 @@ void InitToolTips(HWND hWnd) {
     hTooltip = CreateWindowExW(0, TOOLTIPS_CLASSW, NULL, WS_POPUP | TTS_ALWAYSTIP,
         CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, hWnd, NULL, hInst, NULL);
     if (!hTooltip) return;
-    TOOLINFOW ti = { sizeof(TOOLINFOW) }; ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS; ti.hwnd = hWnd; ti.uId = (UINT_PTR)hComboMode;
-    ti.lpszText = (LPWSTR)L"Режимы ГОСТ 28147-89:\n• ECB — простой блочный режим.\n• CBC — сцепление блоков.\n• CFB — потоковый режим.\nКонтейнер: GOST0 + MODE + IV + данные.";
-    SendMessageW(hTooltip, TTM_ADDTOOLW, 0, (LPARAM)&ti);
+
+    auto AddTip = [&](HWND ctrl, const wchar_t* text) {
+        if (!ctrl || !text) return;
+        TOOLINFOW ti = { sizeof(TOOLINFOW) };
+        ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+        ti.hwnd = hWnd;
+        ti.uId = (UINT_PTR)ctrl;
+        ti.lpszText = (LPWSTR)text;
+        SendMessageW(hTooltip, TTM_ADDTOOLW, 0, (LPARAM)&ti);
+        };
+
+    AddTip(hComboMode, L"Режимы ГОСТ 28147-89:\n• ECB — простой блочный режим.\n• CBC — сцепление блоков.\n• CFB — потоковый режим.\nКонтейнер: GOST0 + MODE + IV + данные.");
+    AddTip(hEditKey, L"Вставьте или сгенерируйте 64 HEX-символа. Ключ сохраняется для текущего пользователя автоматически.");
+    AddTip(hBtnGenerateKey, L"Создаёт новый случайный ключ ГОСТ и подставляет его в поле ключа.");
+    AddTip(hEditInput, L"Исходный текст. Можно вставить напрямую или загрузить через меню Файл → Открыть...");
+    AddTip(hEditOutput, L"Результат шифрования или расшифрования. Сохраните через меню Файл → Сохранить.");
+    AddTip(hBtnEncrypt, L"Зашифровать текущий текст в выбранном режиме.");
+    AddTip(hBtnDecryptLast, L"Расшифровать последний сохранённый файл текущего пользователя.");
+    AddTip(hBtnDecrypt, L"Расшифровать текст из поля результата или из буфера обмена.");
+    AddTip(hBtnClear, L"Очистить оба текстовых поля и сбросить ошибки ввода.");
+    AddTip(hBtnChangeUser, L"Открыть окно смены пользователя, чтобы переключиться на другой профиль.");
+    AddTip(hBtnHelp, L"Открыть краткую справку по работе с программой.");
 }
 
 // ------------------------
@@ -1052,10 +1096,31 @@ void ChangeUser(HWND hWnd) {
 // Login window proc
 // ------------------------
 LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    static HWND cbUser, ePass, bOk, bNew, stTitle, stSub, bShow;
-    static bool isNewUser = false;
+    static HWND cbUser, ePass, bOk, bNew, stTitle, stSub, bShow, stUserError, stPassError;
+    static bool isNewUser = false, userError = false, passError = false;
     static HFONT fTitle = NULL, fSub = NULL;
     static vector<wstring> allUsers;
+
+    auto ClearErrors = [&]() {
+        userError = false; passError = false;
+        if (stUserError) SetWindowTextW(stUserError, L"");
+        if (stPassError) SetWindowTextW(stPassError, L"");
+        InvalidateRect(hWnd, nullptr, TRUE);
+        };
+
+    auto SetFieldError = [&](bool forUser, const wstring& text) {
+        if (forUser) {
+            userError = !text.empty();
+            if (stUserError) SetWindowTextW(stUserError, text.c_str());
+            InvalidateRect(cbUser, nullptr, TRUE);
+        }
+        else {
+            passError = !text.empty();
+            if (stPassError) SetWindowTextW(stPassError, text.c_str());
+            InvalidateRect(ePass, nullptr, TRUE);
+        }
+        InvalidateRect(hWnd, nullptr, TRUE);
+        };
 
     auto FillUsers = [&]() {
         allUsers = ListSavedUsers();
@@ -1077,45 +1142,56 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     switch (msg) {
     case WM_CREATE: {
-        isNewUser = false;
-        HFONT base = CreateFontW(20, 0, 0, 0, FW_MEDIUM, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        fTitle = CreateFontW(28, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
-        fSub = CreateFontW(16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+        isNewUser = false; ClearErrors();
+        auto Dpi = [&](int px) { return ScaleByDpi(hWnd, px); };
+        HFONT base = CreateFontW(-Dpi(18), 0, 0, 0, FW_MEDIUM, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+        fTitle = CreateFontW(-Dpi(28), 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
+        fSub = CreateFontW(-Dpi(16), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
 
-        const int W = 560, H = 320, M = 24, FW_ = W - 2 * M;
-        const int labelH = 22;
-        const int labelGap = 8;
+        const int W = Dpi(560), H = Dpi(360), M = Dpi(24), FW_ = W - 2 * M;
+        const int labelH = Dpi(22);
+        const int labelGap = Dpi(8);
+        const int inputH = Dpi(32);
         RECT r; GetWindowRect(GetDesktopWindow(), &r);
         SetWindowPos(hWnd, nullptr, (r.right - W) / 2, (r.bottom - H) / 3, W, H, SWP_NOZORDER | SWP_NOACTIVATE);
 
         int y = M;
-        stTitle = CreateWindowW(L"STATIC", L"Добро пожаловать", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, 34, hWnd, nullptr, hInst, nullptr);
-        SendMessage(stTitle, WM_SETFONT, (WPARAM)fTitle, TRUE); y += 34 + 4;
+        stTitle = CreateWindowW(L"STATIC", L"Добро пожаловать", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, Dpi(34), hWnd, nullptr, hInst, nullptr);
+        SendMessage(stTitle, WM_SETFONT, (WPARAM)fTitle, TRUE); y += Dpi(34) + Dpi(4);
 
-        stSub = CreateWindowW(L"STATIC", L"Войдите или создайте нового пользователя", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, 20, hWnd, nullptr, hInst, nullptr);
-        SendMessage(stSub, WM_SETFONT, (WPARAM)fSub, TRUE); y += 20 + 12;
+        stSub = CreateWindowW(L"STATIC", L"Войдите или создайте нового пользователя", WS_CHILD | WS_VISIBLE | SS_CENTER, M, y, FW_, Dpi(20), hWnd, nullptr, hInst, nullptr);
+        SendMessage(stSub, WM_SETFONT, (WPARAM)fSub, TRUE); y += Dpi(20) + Dpi(12);
 
         CreateWindowW(L"STATIC", L"👤 Имя пользователя", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, labelH, hWnd, nullptr, hInst, nullptr); y += labelH + labelGap;
 
-        cbUser = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | CBS_DROPDOWN | CBS_AUTOHSCROLL, M, y, FW_, 200, hWnd, (HMENU)ID_LOGIN_EDIT_USER, hInst, nullptr);
+        cbUser = CreateWindowW(L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | CBS_DROPDOWN | CBS_AUTOHSCROLL, M, y, FW_, Dpi(200), hWnd, (HMENU)ID_LOGIN_EDIT_USER, hInst, nullptr);
         ApplyExplorerTheme(cbUser);
         ApplyEditPadding(cbUser, hWnd);
-        y += 32 + 12;
+        y += inputH + Dpi(6);
+
+        stUserError = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, Dpi(18), hWnd, nullptr, hInst, nullptr);
+        y += Dpi(18) + Dpi(4);
 
         CreateWindowW(L"STATIC", L"🔑 Пароль", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, labelH, hWnd, nullptr, hInst, nullptr); y += labelH + labelGap;
 
-        const int showW = 110;
-        ePass = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD, M, y, FW_ - showW - 8, 30, hWnd, (HMENU)ID_LOGIN_EDIT_PASSWORD, hInst, nullptr);
+        const int showW = Dpi(120);
+        ePass = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL | ES_PASSWORD, M, y, FW_ - showW - Dpi(8), inputH, hWnd, (HMENU)ID_LOGIN_EDIT_PASSWORD, hInst, nullptr);
         SendMessage(ePass, EM_SETPASSWORDCHAR, (WPARAM)L'•', 0);
         ApplyExplorerTheme(ePass);
         ApplyEditPadding(ePass, hWnd);
 
-        bShow = CreateWindowW(L"BUTTON", L"Показать", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, M + (FW_ - showW), y + 5, showW, 20, hWnd, (HMENU)ID_LOGIN_SHOWPASS, hInst, nullptr);
-        y += 30 + 16;
+        bShow = CreateWindowW(L"BUTTON", L"👁 Показать", WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX, M + FW_ - showW, y, showW, inputH, hWnd, (HMENU)ID_LOGIN_SHOWPASS, hInst, nullptr);
 
-        const int BW = (FW_ - 10) / 2;
-        bOk = CreateWindowW(L"BUTTON", L"🚪 Войти", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON, M, y, BW, 32, hWnd, (HMENU)ID_LOGIN_OK, hInst, nullptr);
-        bNew = CreateWindowW(L"BUTTON", L"📝 Создать", WS_CHILD | WS_VISIBLE, M + BW + 10, y, BW, 32, hWnd, (HMENU)ID_LOGIN_BTN_NEW_USER, hInst, nullptr);
+        y += inputH + Dpi(6);
+
+        stPassError = CreateWindowW(L"STATIC", L"", WS_CHILD | WS_VISIBLE | SS_LEFT, M, y, FW_, Dpi(18), hWnd, nullptr, hInst, nullptr);
+        y += Dpi(18) + Dpi(10);
+
+        int btnW = Dpi(130), gap = Dpi(12);
+        int total = btnW * 2 + gap;
+        int x = (FW_ - total) / 2 + M;
+        bOk = CreateWindowW(L"BUTTON", L"🚪 Войти", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON, x, y, btnW, inputH, hWnd, (HMENU)ID_LOGIN_OK, hInst, nullptr);
+        bNew = CreateWindowW(L"BUTTON", L"📝 Создать", WS_CHILD | WS_VISIBLE, x + btnW + gap, y, btnW, inputH, hWnd, (HMENU)ID_LOGIN_BTN_NEW_USER, hInst, nullptr);
 
         for (HWND c = GetWindow(hWnd, GW_CHILD); c; c = GetWindow(c, GW_HWNDNEXT)) SendMessage(c, WM_SETFONT, (WPARAM)base, TRUE);
         FillUsers(); SetFocus(cbUser); return 0;
@@ -1124,7 +1200,7 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         PAINTSTRUCT ps; HDC hdc = BeginPaint(hWnd, &ps);
         RECT rc; GetClientRect(hWnd, &rc);
         PaintGradientBackground(hdc, rc);
-        RECT card = CombineRects(hWnd, { stTitle, stSub, cbUser, ePass, bOk, bNew, bShow }, ScaleByDpi(hWnd, 16));
+        RECT card = CombineRects(hWnd, { stTitle, stSub, cbUser, stUserError, ePass, stPassError, bOk, bNew, bShow }, ScaleByDpi(hWnd, 16));
         DrawSoftCard(hWnd, hdc, card);
         EndPaint(hWnd, &ps);
         return 0;
@@ -1133,10 +1209,24 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         RECT rc; GetClientRect(hWnd, &rc); PaintGradientBackground((HDC)wParam, rc); return 1;
     }
     case WM_CTLCOLORSTATIC: {
-        HDC hdc = (HDC)wParam; SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT)); SetBkMode(hdc, TRANSPARENT); return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+        HDC hdc = (HDC)wParam;
+        HWND ctrl = (HWND)lParam;
+        if (ctrl == stUserError || ctrl == stPassError) SetTextColor(hdc, RGB(180, 32, 32));
+        else SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
+        SetBkMode(hdc, TRANSPARENT); return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     }
     case WM_CTLCOLOREDIT: {
-        HDC hdc = (HDC)wParam; SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT)); SetBkColor(hdc, GetSysColor(COLOR_WINDOW)); return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
+        static HBRUSH hErrBr = CreateSolidBrush(RGB(255, 235, 235));
+        HDC hdc = (HDC)wParam; HWND ctrl = (HWND)lParam;
+        bool isUserField = (ctrl == cbUser || GetParent(ctrl) == cbUser);
+        bool isPassField = (ctrl == ePass);
+        SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
+        if ((isUserField && userError) || (isPassField && passError)) {
+            SetBkColor(hdc, RGB(255, 235, 235));
+            return (LRESULT)hErrBr;
+        }
+        SetBkColor(hdc, GetSysColor(COLOR_WINDOW));
+        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     }
     case WM_CTLCOLORBTN: {
         HDC hdc = (HDC)wParam; SetTextColor(hdc, GetSysColor(COLOR_BTNTEXT)); SetBkColor(hdc, GetSysColor(COLOR_BTNFACE)); return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
@@ -1144,8 +1234,9 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_COMMAND: {
         int id = LOWORD(wParam), code = HIWORD(wParam);
         if (id == ID_LOGIN_EDIT_USER && code == CBN_EDITUPDATE) {
-            wchar_t typed[256] = L""; GetWindowTextW(cbUser, typed, 256); RebuildComboWithFilter(typed); return 0;
+            wchar_t typed[256] = L""; GetWindowTextW(cbUser, typed, 256); RebuildComboWithFilter(typed); SetFieldError(true, L""); return 0;
         }
+        if (id == ID_LOGIN_EDIT_PASSWORD && code == EN_CHANGE) { SetFieldError(false, L""); return 0; }
         if (id == ID_LOGIN_SHOWPASS) {
             const BOOL on = (SendMessage((HWND)lParam, BM_GETCHECK, 0, 0) == BST_CHECKED);
             SendMessage(ePass, EM_SETPASSWORDCHAR, (WPARAM)(on ? 0 : L'•'), 0); InvalidateRect(ePass, nullptr, TRUE); return 0;
@@ -1155,21 +1246,21 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
             SetWindowTextW(stTitle, isNewUser ? L"Создание пользователя" : L"Добро пожаловать");
             SetWindowTextW(bOk, isNewUser ? L"✅ Создать" : L"🚪 Войти");
             SetWindowTextW(bNew, isNewUser ? L"⬅ Назад" : L"📝 Создать");
-            SetWindowTextW(cbUser, L""); SetWindowTextW(ePass, L""); SetFocus(cbUser); return 0;
+            SetWindowTextW(cbUser, L""); SetWindowTextW(ePass, L""); ClearErrors(); SetFocus(cbUser); return 0;
         }
         if (id == ID_LOGIN_OK) {
             wchar_t ub[256], pb[128]; GetWindowTextW(cbUser, ub, 256); GetWindowTextW(ePass, pb, 128);
             wstring user = TrimWString(ub), pass = TrimWString(pb);
-            if (user.empty()) { MessageBoxW(hWnd, L"Введите имя пользователя.", L"Ошибка", MB_OK | MB_ICONERROR); SetFocus(cbUser); return 0; }
-            if (pass.empty()) { MessageBoxW(hWnd, L"Введите пароль.", L"Ошибка", MB_OK | MB_ICONERROR); SetFocus(ePass); return 0; }
+            if (user.empty()) { SetFieldError(true, L"Введите имя пользователя."); SetFocus(cbUser); return 0; }
+            if (pass.empty()) { SetFieldError(false, L"Введите пароль."); SetFocus(ePass); return 0; }
 
             if (isNewUser) {
-                if (UserExists(user)) { MessageBoxW(hWnd, L"Такой пользователь уже есть.", L"Ошибка", MB_OK | MB_ICONERROR); SetFocus(cbUser); return 0; }
+                if (UserExists(user)) { SetFieldError(true, L"Такой пользователь уже есть."); SetFocus(cbUser); return 0; }
                 SaveUserPassword(user, pass); g_CurrentUser = user; PostMessage(nullptr, WM_USER + 1, 0, 0); DestroyWindow(hWnd);
             }
             else {
-                if (UserExists(user) && VerifyPassword(user, pass)) { g_CurrentUser = user; PostMessage(nullptr, WM_USER + 1, 0, 0); DestroyWindow(hWnd); }
-                else { MessageBoxW(hWnd, L"Неверные имя или пароль.", L"Ошибка", MB_OK | MB_ICONERROR); SetWindowTextW(ePass, L""); SetFocus(ePass); }
+                if (UserExists(user) && VerifyPassword(user, pass)) { ClearErrors(); g_CurrentUser = user; PostMessage(nullptr, WM_USER + 1, 0, 0); DestroyWindow(hWnd); }
+                else { SetFieldError(false, L"Неверные имя или пароль."); SetWindowTextW(ePass, L""); SetFocus(ePass); }
             }
             return 0;
         }
@@ -1861,7 +1952,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         ApplyExplorerTheme(hEditCurrentUser);
         ApplyEditPadding(hEditCurrentUser, hWnd);
 
-        CreateStyledButton(hWnd, ID_BTN_CHANGE_USER, L"🔄 Сменить пользователя",
+        hBtnChangeUser = CreateStyledButton(hWnd, ID_BTN_CHANGE_USER, L"🔄 Сменить пользователя",
             M + 200 + 8 + 220 + 8, y, UI_BTN + 30, UI_H, false);
         y += UI_H + UI_GAP;
 
@@ -1881,7 +1972,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             M + 140 + 8 + 600 + 8, y,
             120, UI_H, hWnd, (HMENU)ID_STATIC_KEY_LENGTH, hInst, NULL);
 
-        CreateStyledButton(hWnd, ID_BTN_GENERATE_KEY, L"🔧 Сгенерировать",
+        hBtnGenerateKey = CreateStyledButton(hWnd, ID_BTN_GENERATE_KEY, L"🔧 Сгенерировать",
             M + 140 + 8 + 600 + 8 + 120 + 8,
             y,
             150, UI_H, false);
@@ -1940,18 +2031,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         int total = 4 * WBTN + 3 * GAP;
         int X = (W - total) / 2;
 
-        CreateStyledButton(hWnd, ID_BTN_ENCRYPT, L"🔒 Зашифровать",
+        hBtnEncrypt = CreateStyledButton(hWnd, ID_BTN_ENCRYPT, L"🔒 Зашифровать",
             X, y, WBTN, UI_H, true);
 
-        CreateStyledButton(hWnd, ID_BTN_DECRYPT_LAST, L"🔓 Расшифровать последний",
+        hBtnDecryptLast = CreateStyledButton(hWnd, ID_BTN_DECRYPT_LAST, L"🔓 Расшифровать последний",
             X + WBTN + GAP, y, WBTN + 40, UI_H,
             true);
 
-        CreateStyledButton(hWnd, ID_BTN_DECRYPT, L"🔓 Расшифровать",
+        hBtnDecrypt = CreateStyledButton(hWnd, ID_BTN_DECRYPT, L"🔓 Расшифровать",
             X + WBTN + GAP + (WBTN + 40) + GAP, y,
             WBTN, UI_H, true);
 
-        CreateStyledButton(hWnd, ID_BTN_CLEAR, L"✂️ Очистить",
+        hBtnClear = CreateStyledButton(hWnd, ID_BTN_CLEAR, L"✂️ Очистить",
             X + WBTN + GAP + (WBTN + 40) + GAP + WBTN + GAP, y,
             WBTN, UI_H, false);
 
