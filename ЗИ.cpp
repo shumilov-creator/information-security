@@ -41,7 +41,7 @@ HINSTANCE hInst;
 HWND hEditKey, hEditInput, hEditOutput, hComboMode, hBtnHelp, hStaticKeyLength;
 HWND hStaticCurrentUser, hEditCurrentUser;
 HWND hExCombo, hExSend, hExRefresh, hExInList, hExOutList, hExOpenFolder;
-HFONT hFont, hFontTitle;
+HFONT hFont;
 HWND hTooltip;
 
 wstring BASE_DIR_PATH = L"";
@@ -1825,22 +1825,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
             CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
             DEFAULT_PITCH, L"Segoe UI");
-        hFontTitle = CreateFontW(28, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-            CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-            DEFAULT_PITCH, L"Segoe UI");
-        const int W = 1200;
+
+        RECT rc;
+        GetClientRect(hWnd, &rc);
+        const int W = max<int>(rc.right - rc.left, 900);
         const int M = UI_PAD;
-        const int HALF = (W - M * 3) / 2;
+        const int HALF = max<int>((W - M * 3) / 2, 320);
+        const int clientH = rc.bottom - rc.top;
         int y = M;
-
-        HWND title = CreateWindowW(L"STATIC", L"ГОСТ 28147-89 🔒",
-            WS_CHILD | WS_VISIBLE | SS_CENTER,
-            0, y, W, 36, hWnd, (HMENU)-1, hInst, NULL);
-        SendMessage(title, WM_SETFONT, (WPARAM)hFontTitle, TRUE);
-        y += 36;
-
-        y += UI_GAP;
 
         hStaticCurrentUser = CreateWindowW(L"STATIC", L"👤 Текущий пользователь:",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -1879,11 +1871,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             y,
             150, UI_H, false);
 
-        RECT rc;
-        GetClientRect(hWnd, &rc);
-
         // Высота = доступная высота минус отступы и блок кнопок снизу
-        int BOX_H = rc.bottom - y - UI_H * 5 - 40;
+        int BOX_H = clientH - y - UI_H * 5 - 40;
         if (BOX_H < 200) BOX_H = 200;
 
         CreateWindowW(L"STATIC", L"📄 Исходный текст:",
@@ -2244,7 +2233,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
     }
 
     if (hFont)        DeleteObject(hFont);
-    if (hFontTitle)   DeleteObject(hFontTitle);
 
     return (int)msg.wParam;
 }
