@@ -176,7 +176,7 @@ bool DrawStyledButton(LPDRAWITEMSTRUCT dis) {
 
     int len = GetWindowTextLengthW(dis->hwndItem);
     wstring caption(len + 1, L'\0');
-    GetWindowTextW(dis->hwndItem, &caption[0], len + 1);
+    GetWindowTextW(dis->hwndItem, caption.data(), len + 1);
     caption.resize(len);
 
     SetBkMode(dis->hDC, TRANSPARENT);
