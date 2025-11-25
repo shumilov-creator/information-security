@@ -41,10 +41,7 @@ HINSTANCE hInst;
 HWND hEditKey, hEditInput, hEditOutput, hBtnSaveStatus, hComboMode, hBtnCopy, hBtnOpenOutputDir, hBtnHelp, hStaticKeyLength;
 HWND hStaticCurrentUser, hEditCurrentUser, hStatusBar;
 HWND hExCombo, hExSend, hExRefresh, hExInList, hExOutList, hExOpenFolder;
-HFONT hFont, hFontTitle, hFontSmall;
-HBRUSH hBrushBgLight, hBrushBgWhite, hBrushRed, hBrushBlue;
-HBRUSH hBrushCard, hBrushCardHeader;
-HPEN   hPenCardBorder;
+HFONT hFont, hFontTitle;
 HWND hTooltip;
 
 wstring BASE_DIR_PATH = L"";
@@ -60,14 +57,7 @@ int     g_FileCounter = 0;
 static vector<wstring> g_AllRecipients;
 
 // ------------------------
-const COLORREF C_BLUE = RGB(0, 120, 215);
-const COLORREF C_BG_LIGHT = RGB(244, 246, 249);
-const COLORREF C_BG_WHITE = RGB(255, 255, 255);
-const COLORREF C_RED = RGB(255, 224, 224);
-const COLORREF C_TEXT = RGB(45, 45, 45);
-const COLORREF C_CARD = RGB(255, 255, 255);
-const COLORREF C_CARD_HEADER = RGB(234, 239, 247);
-const COLORREF C_CARD_BORDER = RGB(198, 208, 223);
+// Цвета оставлены по умолчанию системными значениями
 
 const int UI_H = 30;
 const int UI_PAD = 12;
@@ -119,33 +109,11 @@ RECT CombineRects(HWND parent, std::initializer_list<HWND> children, int padding
 }
 
 void PaintGradientBackground(HDC hdc, const RECT& rc) {
-    // Простая заливка без градиента для более строгого вида
-    FillRect(hdc, &rc, hBrushBgLight);
+    FillRect(hdc, &rc, GetSysColorBrush(COLOR_WINDOW));
 }
 
-void DrawSoftCard(HWND parent, HDC hdc, const RECT& rc) {
-    if (IsRectEmpty(&rc)) return;
-    int radius = ScaleByDpi(parent, 10);
-
-    HPEN oldPen = (HPEN)SelectObject(hdc, hPenCardBorder);
-    HBRUSH oldBrush = (HBRUSH)SelectObject(hdc, hBrushCard);
-
-    // корпус секции
-    RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, radius, radius);
-
-    // верхняя полоса для визуального разделения
-    RECT header = rc;
-    int inset = ScaleByDpi(parent, 6);
-    InflateRect(&header, -inset, 0);
-    header.bottom = min(header.bottom, header.top + ScaleByDpi(parent, 30));
-    FillRect(hdc, &header, hBrushCardHeader);
-
-    // линия под заголовком для ясной структуры
-    MoveToEx(hdc, header.left + ScaleByDpi(parent, 8), header.bottom, NULL);
-    LineTo(hdc, header.right - ScaleByDpi(parent, 8), header.bottom);
-
-    SelectObject(hdc, oldBrush);
-    SelectObject(hdc, oldPen);
+void DrawSoftCard(HWND, HDC, const RECT&) {
+    // Дополнительное декоративное оформление отключено
 }
 
 void ApplyExplorerTheme(HWND hCtrl) {
@@ -1091,13 +1059,13 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         RECT rc; GetClientRect(hWnd, &rc); PaintGradientBackground((HDC)wParam, rc); return 1;
     }
     case WM_CTLCOLORSTATIC: {
-        HDC hdc = (HDC)wParam; SetTextColor(hdc, C_TEXT); SetBkMode(hdc, TRANSPARENT); return (LRESULT)hBrushBgLight;
+        HDC hdc = (HDC)wParam; SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT)); SetBkMode(hdc, TRANSPARENT); return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     }
     case WM_CTLCOLOREDIT: {
-        HDC hdc = (HDC)wParam; SetTextColor(hdc, RGB(0, 0, 0)); SetBkColor(hdc, C_BG_WHITE); return (LRESULT)hBrushBgWhite;
+        HDC hdc = (HDC)wParam; SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT)); SetBkColor(hdc, GetSysColor(COLOR_WINDOW)); return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     }
     case WM_CTLCOLORBTN: {
-        HDC hdc = (HDC)wParam; SetTextColor(hdc, RGB(255, 255, 255)); SetBkColor(hdc, C_BLUE); return (LRESULT)hBrushBlue;
+        HDC hdc = (HDC)wParam; SetTextColor(hdc, GetSysColor(COLOR_BTNTEXT)); SetBkColor(hdc, GetSysColor(COLOR_BTNFACE)); return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
     }
     case WM_COMMAND: {
         int id = LOWORD(wParam), code = HIWORD(wParam);
@@ -1617,21 +1585,21 @@ LRESULT CALLBACK ExchangeWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
     }
     case WM_CTLCOLORSTATIC: {
         HDC hdc = (HDC)wParam;
-        SetTextColor(hdc, C_TEXT);
+        SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
         SetBkMode(hdc, TRANSPARENT);
-        return (LRESULT)hBrushBgLight;
+        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     }
     case WM_CTLCOLOREDIT: {
         HDC hdc = (HDC)wParam;
-        SetTextColor(hdc, RGB(0, 0, 0));
-        SetBkColor(hdc, C_BG_WHITE);
-        return (LRESULT)hBrushBgWhite;
+        SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
+        SetBkColor(hdc, GetSysColor(COLOR_WINDOW));
+        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     }
     case WM_CTLCOLORBTN: {
         HDC hdc = (HDC)wParam;
-        SetTextColor(hdc, RGB(255, 255, 255));
-        SetBkColor(hdc, C_BLUE);
-        return (LRESULT)hBrushBlue;
+        SetTextColor(hdc, GetSysColor(COLOR_BTNTEXT));
+        SetBkColor(hdc, GetSysColor(COLOR_BTNFACE));
+        return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
     }
 
     case WM_COMMAND: {
@@ -1798,11 +1766,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
             CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
             DEFAULT_PITCH, L"Segoe UI");
-        hFontSmall = CreateFontW(14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
-            CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-            DEFAULT_PITCH, L"Segoe UI");
-
         const int W = 1200;
         const int M = UI_PAD;
         const int HALF = (W - M * 3) / 2;
@@ -1814,11 +1777,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         SendMessage(title, WM_SETFONT, (WPARAM)hFontTitle, TRUE);
         y += 36;
 
-        HWND subtitle = CreateWindowW(L"STATIC", L"Современный интерфейс с понятными картами и акцентами",
-            WS_CHILD | WS_VISIBLE | SS_CENTER,
-            0, y, W, 22, hWnd, (HMENU)-1, hInst, NULL);
-        SendMessage(subtitle, WM_SETFONT, (WPARAM)hFontSmall, TRUE);
-        y += 22 + UI_GAP;
+        y += UI_GAP;
 
         hStaticCurrentUser = CreateWindowW(L"STATIC", L"👤 Текущий пользователь:",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
@@ -2018,32 +1977,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
     case WM_CTLCOLORSTATIC: {
         HDC hdc = (HDC)wParam;
-        SetTextColor(hdc, C_TEXT);
+        SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
         SetBkMode(hdc, TRANSPARENT);
-        return (LRESULT)hBrushBgLight;
+        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     }
     case WM_CTLCOLOREDIT: {
         HDC  hdc = (HDC)wParam;
         HWND he = (HWND)lParam;
-        SetTextColor(hdc, RGB(0, 0, 0));
+        SetTextColor(hdc, GetSysColor(COLOR_WINDOWTEXT));
 
         if (he == hEditKey) {
-            wchar_t b[256];
-            GetWindowTextW(hEditKey, b, 256);
-            wstring n = NormalizeHex64(b);
-            bool ok = ValidateKey(n);
-            SetBkColor(hdc, ok ? C_BG_WHITE : C_RED);
-            return (LRESULT)(ok ? hBrushBgWhite : hBrushRed);
+            return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
         }
 
-        SetBkColor(hdc, C_BG_WHITE);
-        return (LRESULT)hBrushBgWhite;
+        SetBkColor(hdc, GetSysColor(COLOR_WINDOW));
+        return (LRESULT)GetSysColorBrush(COLOR_WINDOW);
     }
     case WM_CTLCOLORBTN: {
         HDC hdc = (HDC)wParam;
-        SetTextColor(hdc, RGB(255, 255, 255));
-        SetBkColor(hdc, C_BLUE);
-        return (LRESULT)hBrushBlue;
+        SetTextColor(hdc, GetSysColor(COLOR_BTNTEXT));
+        SetBkColor(hdc, GetSysColor(COLOR_BTNFACE));
+        return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
     }
 
     case WM_COMMAND: {
@@ -2250,14 +2204,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
     EnsureDirectoryExists(GetOutputDir());
     EnsureDirectoryExists(GetExchangeDir());
 
-    hBrushBgLight = CreateSolidBrush(C_BG_LIGHT);
-    hBrushBgWhite = CreateSolidBrush(C_BG_WHITE);
-    hBrushRed = CreateSolidBrush(C_RED);
-    hBrushBlue = CreateSolidBrush(C_BLUE);
-    hBrushCard = CreateSolidBrush(C_CARD);
-    hBrushCardHeader = CreateSolidBrush(C_CARD_HEADER);
-    hPenCardBorder = CreatePen(PS_SOLID, 1, C_CARD_BORDER);
-
     if (!RegisterLoginClass(hInstance))   return FALSE;
     if (!MyRegisterClass(hInstance))      return FALSE;
     if (!RegisterKeysClass(hInstance))    return FALSE;
@@ -2290,14 +2236,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
 
     if (hFont)        DeleteObject(hFont);
     if (hFontTitle)   DeleteObject(hFontTitle);
-    if (hFontSmall)   DeleteObject(hFontSmall);
-    if (hBrushBgLight) DeleteObject(hBrushBgLight);
-    if (hBrushBgWhite) DeleteObject(hBrushBgWhite);
-    if (hBrushRed)     DeleteObject(hBrushRed);
-    if (hBrushBlue)    DeleteObject(hBrushBlue);
-    if (hBrushCard)    DeleteObject(hBrushCard);
-    if (hBrushCardHeader) DeleteObject(hBrushCardHeader);
-    if (hPenCardBorder) DeleteObject(hPenCardBorder);
 
     return (int)msg.wParam;
 }
