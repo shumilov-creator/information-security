@@ -344,8 +344,14 @@ wstring UTF8ToWString(const string& s) {
 string Base64Encode(const vector<uint8_t>& d) {
     static const char t[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     string o; int val = 0, valb = -6;
-    for (uint8_t c : d) { val = (val << 8) + c; valb += 8; while (valb >= 0) { o.push_back(t[(val >> valb) & 0x3F]); valb -= 6; } }
+    for (uint8_t c : d) {
+        // Набираем биты по 3 байта за раз, перекладывая их в 4 шестибитовых символа
+        val = (val << 8) + c; valb += 8;
+        while (valb >= 0) { o.push_back(t[(val >> valb) & 0x3F]); valb -= 6; }
+    }
+    // Добавляем остаток, если в аккумуляторе остались непреобразованные биты
     if (valb > -6) o.push_back(t[((val << 8) >> (valb + 8)) & 0x3F]);
+    // Выравниваем строку символом '=' до длины, кратной 4
     while (o.size() % 4) o.push_back('=');
     return o;
 }
@@ -362,7 +368,9 @@ vector<uint8_t> Base64Decode(const string& s) {
     };
     vector<uint8_t> o; int val = 0, valb = -8;
     for (unsigned char c : s) {
+        // Останавливаемся на символе '=', либо на любом невалидном байте
         if (c == '=' || T[c] == 64) break;
+        // Складываем биты по 6 за раз, восстанавливая исходные 8-битные октеты
         val = (val << 6) + T[c]; valb += 6;
         if (valb >= 0) { o.push_back((val >> valb) & 0xFF); valb -= 8; }
     }
@@ -603,6 +611,7 @@ void SaveUserKey(const wstring& user, const wstring& rawKey, const wstring& labe
     wstring path = BASE_DIR_PATH + L"\\" + KEYS_FILENAME;
 
     auto existing = LoadAllUserKeys(user);
+    // Не дублируем ключ, если он уже записан для пользователя
     bool already = any_of(existing.begin(), existing.end(), [&](const UserKey& uk) { return uk.key == key; });
     if (already) return;
 
@@ -627,6 +636,7 @@ bool SetCurrentUserKey(const wstring& user, const wstring& key) {
             rebuild.push_back(curKey);
             if (parts.size() >= 3) rebuild.push_back(TrimWString(parts[2]));
             if (parts.size() >= 4) rebuild.push_back(TrimWString(parts[3]));
+            // Помечаем текущий ключ маркером *current*, чтобы интерфейс показывал его выбранным
             if (curKey == key) rebuild.push_back(L"*current*");
             out += WStringToUTF8(SafeJoin(rebuild)) + "\n";
         }
@@ -693,6 +703,7 @@ bool ImportUserKeyFromFile(HWND hWnd, const wstring& user) {
     ifstream fin(wstring(file), ios::binary); if (!fin) return false;
     string s((istreambuf_iterator<char>(fin)), {}); wstring w = NormalizeHex64(UTF8ToWString(s));
     if (!ValidateKey(w)) return false;
+    // Используем имя файла как метку, чтобы пользователь видел происхождение ключа
     wstring label = wstring(file); size_t pos = label.find_last_of(L"\\/"); if (pos != wstring::npos) label = label.substr(pos + 1);
     SaveUserKey(user, w, label);
     return true;
@@ -702,23 +713,32 @@ bool ImportUserKeyFromFile(HWND hWnd, const wstring& user) {
 // Реализация блочного шифра ГОСТ 28147-89
 // ------------------------
 void GostEncryptBlock(const uint8_t* in, uint8_t* out, const vector<uint8_t>& k) {
+    // Делим входные 64 бита на левую и правую половины для раундовой сети
     uint32_t n1 = get_uint32(in), n2 = get_uint32(in + 4);
+    // Подготавливаем восемь 32-битных подключей из исходного ключа
     uint32_t kk[8]; for (int i = 0;i < 8;++i) kk[i] = get_uint32(&k[i * 4]);
+    // Последовательность индексов подключей для 32 раундов шифрования
     static const int ENC_K[32] = { 0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7, 0,1,2,3,4,5,6,7, 7,6,5,4,3,2,1,0 };
     for (int r = 0;r < 32;++r) {
+        // Раундовая функция: сложение по модулю 2^32, S-блоки и циклический сдвиг
         uint32_t t = n1 + kk[ENC_K[r]], s = 0;
         for (int i = 0;i < 8;++i) s |= (uint32_t)S[i][(t >> (4 * i)) & 0x0F] << (4 * i);
         s = ROL32(s, 11) ^ n2;
+        // Меняем половины местами, пока не наступит финальный раунд
         if (r < 31) { n2 = n1; n1 = s; }
         else n2 = s;
     }
+    // Собираем две половины обратно в выходной блок
     put_uint32(out, n1); put_uint32(out + 4, n2);
 }
 void GostDecryptBlock(const uint8_t* in, uint8_t* out, const vector<uint8_t>& k) {
+    // Разбиваем шифроблок на две половины для обратного прохода сети
     uint32_t n1 = get_uint32(in), n2 = get_uint32(in + 4);
     uint32_t kk[8]; for (int i = 0;i < 8;++i) kk[i] = get_uint32(&k[i * 4]);
+    // Таблица индексов подключей для расшифровки (обратный порядок)
     static const int DEC_K[32] = { 0,1,2,3,4,5,6,7, 7,6,5,4,3,2,1,0, 7,6,5,4,3,2,1,0, 7,6,5,4,3,2,1,0 };
     for (int r = 0;r < 32;++r) {
+        // Те же шаги, что и в шифровании: сложение, S-блоки, сдвиг и XOR с соседней половиной
         uint32_t t = n1 + kk[DEC_K[r]], s = 0;
         for (int i = 0;i < 8;++i) s |= (uint32_t)S[i][(t >> (4 * i)) & 0x0F] << (4 * i);
         s = ROL32(s, 11) ^ n2;
@@ -761,6 +781,7 @@ vector<uint8_t> GostEncryptContainer(const wstring& text, const vector<uint8_t>&
         }
     }
 
+    // Собираем итоговый контейнер: сигнатура, режим, IV и шифртекст
     vector<uint8_t> cont;
     const uint8_t magic[5] = { 'G','O','S','T','0' };
     cont.insert(cont.end(), magic, magic + 5);
@@ -770,13 +791,16 @@ vector<uint8_t> GostEncryptContainer(const wstring& text, const vector<uint8_t>&
     return cont;
 }
 wstring GostDecryptContainer(const vector<uint8_t>& bin, const vector<uint8_t>& key) {
+    // Минимальная проверка длины: должны поместиться сигнатура, режим и IV
     if (bin.size() < 5 + 1 + 8) return L"Ошибка: слишком короткие данные.";
     // Проверяем магическую сигнатуру контейнера
     if (!(bin[0] == 'G' && bin[1] == 'O' && bin[2] == 'S' && bin[3] == 'T' && bin[4] == '0'))
         return L"Ошибка: неизвестный контейнер.";
+    // Извлекаем режим и IV, остальные байты — это полезная нагрузка
     int mode = bin[5]; const uint8_t* iv = &bin[6]; size_t pos = 5 + 1 + 8;
     if ((bin.size() - pos) % 8 != 0) return L"Ошибка: размер некратен 8.";
     vector<uint8_t> enc(bin.begin() + pos, bin.end()), out(enc.size());
+    // prev — предыдущий блок (CBC) или регистр сдвига (CFB)
     uint8_t prev[8] = { 0 }, tmp[8]; memcpy(prev, iv, 8);
 
     for (size_t i = 0;i < enc.size();i += 8) {
@@ -795,6 +819,7 @@ wstring GostDecryptContainer(const vector<uint8_t>& bin, const vector<uint8_t>& 
         }
     }
 
+    // Проверяем корректность паддинга и отрезаем лишние байты
     if (!out.empty()) {
         uint8_t pad = out.back();
         if (pad == 0 || pad > 8 || out.size() < pad) return L"Ошибка: недопустимый паддинг.";
@@ -804,14 +829,18 @@ wstring GostDecryptContainer(const vector<uint8_t>& bin, const vector<uint8_t>& 
     return UTF8ToWString(string(out.begin(), out.end()));
 }
 wstring DirectTextEncrypt(const wstring& text, const wstring& keyStr, int mode) {
+    // Нормализуем строковый ключ и превращаем его в 32 байта
     wstring n = NormalizeHex64(keyStr); vector<uint8_t> key = hexStringToBytes(n);
     if (key.size() != 32) return L"Ошибка: некорректный ключ. Нужны 64 HEX-символа.";
+    // Упаковываем текст в контейнер и кодируем в Base64 для передачи
     vector<uint8_t> c = GostEncryptContainer(text, key, mode);
     return UTF8ToWString(Base64Encode(c));
 }
 wstring DirectTextDecrypt(const wstring& in, const wstring& keyStr, int) {
+    // Приводим ввод к валидному hex-ключу
     wstring n = NormalizeHex64(keyStr); vector<uint8_t> key = hexStringToBytes(n);
     if (key.size() != 32) return L"Ошибка: некорректный ключ.";
+    // Убираем пробелы, дополняем до корректной длины и декодируем Base64 в байты контейнера
     string b = WStringToUTF8(in); b.erase(remove_if(b.begin(), b.end(), ::isspace), b.end());
     while (b.size() % 4) b += '=';
     vector<uint8_t> bin = Base64Decode(b);
@@ -1283,6 +1312,7 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 }
 
 // --- мини-диалог для InputBox ---
+// Структура для хранения состояния вспомогательного окна ввода
 struct IBState {
     HWND edit{};
     bool ok{ false };
@@ -1295,6 +1325,7 @@ static LRESULT CALLBACK InputBoxWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPAR
     case WM_COMMAND: {
         switch (LOWORD(wParam)) {
         case IDOK: {
+            // При подтверждении забираем текст из поля и помечаем результат как успешный
             if (st && st->edit) {
                 wchar_t buf[512] = L"";
                 GetWindowTextW(st->edit, buf, 512);
@@ -1305,6 +1336,7 @@ static LRESULT CALLBACK InputBoxWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPAR
             return 0;
         }
         case IDCANCEL:
+            // Отмена закрывает окно, не сохраняя введённый текст
             if (st) st->ok = false;
             DestroyWindow(hWnd);
             return 0;
@@ -1312,6 +1344,7 @@ static LRESULT CALLBACK InputBoxWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPAR
         break;
     }
     case WM_CLOSE:
+        // Закрытие окна клавишей "крестик" тоже помечаем как отмену
         if (st) st->ok = false;
         DestroyWindow(hWnd);
         return 0;
@@ -1432,6 +1465,7 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         auto keys = LoadAllUserKeys(g_CurrentUser);
         int i = 0;
         for (auto& k : keys) {
+            // Заполняем каждую строку таблицы: дата, метка, ключ и признак текущего ключа
             LVITEMW it{}; it.mask = LVIF_TEXT | LVIF_IMAGE; it.iItem = i;
             it.pszText = (LPWSTR)(k.when.empty() ? L"(без даты)" : k.when.c_str());
             it.iImage = k.isCurrent ? 1 : 0;
@@ -1475,7 +1509,7 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             int w = widths[i]; xR -= w; SetWindowPos(rightBtns[i], NULL, xR, y, w, btnH, SWP_NOZORDER); xR -= gap;
         }
 
-        // колонки
+        // колонки ListView перестраиваем при изменении ширины окна, чтобы длинный ключ умещался в последнем столбце
         int totalW = lvW;
         int wDate = Dpi(180), wLabel = Dpi(220), wCur = Dpi(80);
         int wKey = max(Dpi(260), totalW - (wDate + wLabel + wCur) - Dpi(20));
