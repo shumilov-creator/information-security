@@ -344,8 +344,14 @@ wstring UTF8ToWString(const string& s) {
 string Base64Encode(const vector<uint8_t>& d) {
     static const char t[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     string o; int val = 0, valb = -6;
-    for (uint8_t c : d) { val = (val << 8) + c; valb += 8; while (valb >= 0) { o.push_back(t[(val >> valb) & 0x3F]); valb -= 6; } }
+    for (uint8_t c : d) {
+        // Набираем биты по 3 байта за раз, перекладывая их в 4 шестибитовых символа
+        val = (val << 8) + c; valb += 8;
+        while (valb >= 0) { o.push_back(t[(val >> valb) & 0x3F]); valb -= 6; }
+    }
+    // Добавляем остаток, если в аккумуляторе остались непреобразованные биты
     if (valb > -6) o.push_back(t[((val << 8) >> (valb + 8)) & 0x3F]);
+    // Выравниваем строку символом '=' до длины, кратной 4
     while (o.size() % 4) o.push_back('=');
     return o;
 }
@@ -362,7 +368,9 @@ vector<uint8_t> Base64Decode(const string& s) {
     };
     vector<uint8_t> o; int val = 0, valb = -8;
     for (unsigned char c : s) {
+        // Останавливаемся на символе '=', либо на любом невалидном байте
         if (c == '=' || T[c] == 64) break;
+        // Складываем биты по 6 за раз, восстанавливая исходные 8-битные октеты
         val = (val << 6) + T[c]; valb += 6;
         if (valb >= 0) { o.push_back((val >> valb) & 0xFF); valb -= 8; }
     }
@@ -603,6 +611,7 @@ void SaveUserKey(const wstring& user, const wstring& rawKey, const wstring& labe
     wstring path = BASE_DIR_PATH + L"\\" + KEYS_FILENAME;
 
     auto existing = LoadAllUserKeys(user);
+    // Не дублируем ключ, если он уже записан для пользователя
     bool already = any_of(existing.begin(), existing.end(), [&](const UserKey& uk) { return uk.key == key; });
     if (already) return;
 
@@ -627,6 +636,7 @@ bool SetCurrentUserKey(const wstring& user, const wstring& key) {
             rebuild.push_back(curKey);
             if (parts.size() >= 3) rebuild.push_back(TrimWString(parts[2]));
             if (parts.size() >= 4) rebuild.push_back(TrimWString(parts[3]));
+            // Помечаем текущий ключ маркером *current*, чтобы интерфейс показывал его выбранным
             if (curKey == key) rebuild.push_back(L"*current*");
             out += WStringToUTF8(SafeJoin(rebuild)) + "\n";
         }
@@ -693,6 +703,7 @@ bool ImportUserKeyFromFile(HWND hWnd, const wstring& user) {
     ifstream fin(wstring(file), ios::binary); if (!fin) return false;
     string s((istreambuf_iterator<char>(fin)), {}); wstring w = NormalizeHex64(UTF8ToWString(s));
     if (!ValidateKey(w)) return false;
+    // Используем имя файла как метку, чтобы пользователь видел происхождение ключа
     wstring label = wstring(file); size_t pos = label.find_last_of(L"\\/"); if (pos != wstring::npos) label = label.substr(pos + 1);
     SaveUserKey(user, w, label);
     return true;
@@ -829,7 +840,7 @@ wstring DirectTextDecrypt(const wstring& in, const wstring& keyStr, int) {
     // Приводим ввод к валидному hex-ключу
     wstring n = NormalizeHex64(keyStr); vector<uint8_t> key = hexStringToBytes(n);
     if (key.size() != 32) return L"Ошибка: некорректный ключ.";
-    // Убираем пробелы, дополняем до корректной длины и декодируем Base64
+    // Убираем пробелы, дополняем до корректной длины и декодируем Base64 в байты контейнера
     string b = WStringToUTF8(in); b.erase(remove_if(b.begin(), b.end(), ::isspace), b.end());
     while (b.size() % 4) b += '=';
     vector<uint8_t> bin = Base64Decode(b);
