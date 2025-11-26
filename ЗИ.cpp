@@ -35,7 +35,7 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 using namespace std;
 
 // ------------------------
-// GUI handles / state
+// Дескрипторы элементов и состояние интерфейса
 // ------------------------
 HINSTANCE hInst;
 HWND hEditKey, hEditInput, hEditOutput, hComboMode, hBtnHelp, hStaticKeyLength;
@@ -66,7 +66,7 @@ const int UI_GAP = 10;
 const int UI_BTN = 160;
 
 // ------------------------
-// Styling helpers
+// Вспомогательные функции стилизации
 // ------------------------
 int ScaleByDpi(HWND hWnd, int px) {
     UINT dpi = 96;
@@ -222,7 +222,7 @@ bool DrawStyledButton(LPDRAWITEMSTRUCT dis) {
 }
 
 // ------------------------
-// IDs
+// Идентификаторы элементов интерфейса
 // ------------------------
 #define ID_BTN_OPEN_KEYS_FILE      107
 #define ID_BTN_CLEAR               109
@@ -245,7 +245,7 @@ bool DrawStyledButton(LPDRAWITEMSTRUCT dis) {
 #define ID_STATIC_CURRENT_USER     119
 #define ID_EDIT_CURRENT_USER       120
 #define ID_LOGIN_SHOWPASS          206
-// Exchange block
+// Блок обмена файлами
 #define ID_EXCH_COMBO              402
 #define ID_EXCH_SEND               403
 #define ID_EXCH_REFRESH            404
@@ -253,7 +253,7 @@ bool DrawStyledButton(LPDRAWITEMSTRUCT dis) {
 #define ID_EXCH_OPEN_FOLDER        406
 #define ID_EXCH_OUT_LIST           407
 
-// Keys manager (ListView)
+// Менеджер ключей (список ListView)
 #define ID_KEYS_LISTVIEW     551
 #define ID_KEYS_ADD_CURRENT  552
 #define ID_KEYS_DELETE       553
@@ -264,7 +264,7 @@ bool DrawStyledButton(LPDRAWITEMSTRUCT dis) {
 #define ID_KEYS_EXPORT       558
 #define ID_KEYS_IMPORT       559
 
-// Menu IDs
+// Идентификаторы пунктов меню
 #define IDM_FILE_OPEN        600
 #define IDM_FILE_SAVE        601
 #define IDM_FILE_EXIT        602
@@ -272,7 +272,7 @@ bool DrawStyledButton(LPDRAWITEMSTRUCT dis) {
 #define IDM_TOOLS_EXCHANGE   611
 #define IDM_TOOLS_OUTPUT_DIR 612
 
-// Prototypes
+// Прототипы функций
 void HandleEncryptDecrypt(HWND, bool, bool);
 ATOM RegisterKeysClass(HINSTANCE);
 ATOM RegisterExchangeClass(HINSTANCE);
@@ -287,7 +287,7 @@ LRESULT CALLBACK KeysWndProc(HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK ExchangeWndProc(HWND, UINT, WPARAM, LPARAM);
 
 // ------------------------
-// S-boxes GOST 28147-89 ("Тест")
+// Таблица S-box для ГОСТ 28147-89 («Тест»)
 // ------------------------
 const uint8_t S[8][16] = {
     {4,10,9,2,13,8,0,14,6,11,1,12,7,15,5,3},
@@ -301,7 +301,7 @@ const uint8_t S[8][16] = {
 };
 
 // ------------------------
-// Paths & helpers
+// Пути хранения данных и вспомогательные функции
 // ------------------------
 wstring GetExePath() {
     wchar_t p[MAX_PATH];
@@ -340,7 +340,7 @@ wstring UTF8ToWString(const string& s) {
     return w;
 }
 
-// Base64
+// Кодирование и декодирование Base64
 string Base64Encode(const vector<uint8_t>& d) {
     static const char t[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     string o; int val = 0, valb = -6;
@@ -369,12 +369,12 @@ vector<uint8_t> Base64Decode(const string& s) {
     return o;
 }
 
-// low-level
+// Низкоуровневые операции побитового сдвига и копирования
 uint32_t ROL32(uint32_t v, int n) { return (v << n) | (v >> (32 - n)); }
 uint32_t get_uint32(const uint8_t* p) { uint32_t v; memcpy(&v, p, sizeof(v)); return v; }
 void put_uint32(uint8_t* p, uint32_t v) { memcpy(p, &v, sizeof(v)); }
 
-// case-insensitive contains (Unicode)
+// Поиск подстроки без учёта регистра (Unicode)
 static wchar_t ToLowerRu(wchar_t c) { return (wchar_t)towlower(c); }
 static bool ICaseContains(const wstring& hay, const wstring& needle) {
     if (needle.empty()) return true;
@@ -384,7 +384,7 @@ static bool ICaseContains(const wstring& hay, const wstring& needle) {
     return h.find(n) != wstring::npos;
 }
 
-// HEX key utils
+// Работа с шестнадцатеричными ключами
 wstring NormalizeHex64(const wstring& raw) {
     wstring s = TrimWString(raw), out; out.reserve(s.size());
     for (wchar_t ch : s) if (iswxdigit(ch)) out.push_back((wchar_t)towupper(ch));
@@ -401,7 +401,7 @@ vector<uint8_t> hexStringToBytes(const wstring& hex) {
     return b;
 }
 
-// Users list from passwords file
+// Список пользователей, сохранённых в файле паролей
 vector<wstring> ListSavedUsers() {
     vector<wstring> users;
     wstring path = BASE_DIR_PATH + L"\\" + PASSWORDS_FILENAME;
@@ -422,7 +422,7 @@ vector<wstring> ListSavedUsers() {
     return users;
 }
 
-// Key length indicator
+// Индикатор длины ключа в поле ввода
 void UpdateKeyLengthIndicator(HWND) {
     wchar_t buf[256]; GetWindowTextW(hEditKey, buf, 256);
     wstringstream w; w << wcslen(buf) << L"/64 символов";
@@ -444,7 +444,7 @@ void CopyKeyToClipboard(HWND hWnd, const wstring& s) {
     MessageBoxW(hWnd, L"Ключ скопирован в буфер обмена!", L"Информация", MB_OK | MB_ICONINFORMATION);
 }
 
-// RNG key
+// Генерация случайного 256-битного ключа
 wstring GenerateRandomKey() {
     uint8_t buf[32];
     if (BCryptGenRandom(NULL, buf, (ULONG)sizeof(buf), BCRYPT_USE_SYSTEM_PREFERRED_RNG) != 0) {
@@ -456,7 +456,7 @@ wstring GenerateRandomKey() {
     return out;
 }
 
-// open folder
+// Открытие папки с использованием проводника Windows
 bool OpenFolderInExplorer(const wstring& dir) {
     if (!EnsureDirectoryExists(dir)) return false;
     PIDLIST_ABSOLUTE pidl = nullptr;
@@ -470,7 +470,7 @@ bool OpenFolderInExplorer(const wstring& dir) {
     return (INT_PTR)h > 32;
 }
 
-// DPAPI
+// Обёртки над DPAPI для безопасного хранения паролей
 void SecureClear(vector<uint8_t>& buf) {
     if (!buf.empty()) SecureZeroMemory(buf.data(), buf.size());
 }
@@ -491,7 +491,7 @@ bool DPAPI_Unprotect(const vector<uint8_t>& in, vector<uint8_t>& out) {
     return true;
 }
 
-// Passwords save/load
+// Сохранение и загрузка паролей пользователей
 void SaveUserPassword(const wstring& user, const wstring& pass) {
     if (user.empty() || pass.empty()) return;
     vector<uint8_t> plain((uint8_t*)pass.data(), (uint8_t*)pass.data() + pass.size() * sizeof(wchar_t)), prot;
@@ -544,12 +544,12 @@ bool VerifyPassword(const wstring& user, const wstring& pass) { wstring s = Load
 bool UserExists(const wstring& user) { return !LoadUserPassword(user).empty(); }
 
 // ------------------------
-// MULTI-KEY SUPPORT (label + current)
+// Поддержка нескольких ключей (метка + пометка текущего)
 // ------------------------
 struct UserKey {
-    wstring key;      // 64HEX
-    wstring when;     // "YYYY-MM-DD HH:MM" (optional)
-    wstring label;    // optional
+    wstring key;      // 64 символа HEX
+    wstring when;     // отметка времени "YYYY-MM-DD HH:MM" (необязательно)
+    wstring label;    // произвольная подпись ключа
     bool    isCurrent = false;
 };
 
@@ -699,7 +699,7 @@ bool ImportUserKeyFromFile(HWND hWnd, const wstring& user) {
 }
 
 // ------------------------
-// GOST block cipher
+// Реализация блочного шифра ГОСТ 28147-89
 // ------------------------
 void GostEncryptBlock(const uint8_t* in, uint8_t* out, const vector<uint8_t>& k) {
     uint32_t n1 = get_uint32(in), n2 = get_uint32(in + 4);
@@ -729,17 +729,20 @@ void GostDecryptBlock(const uint8_t* in, uint8_t* out, const vector<uint8_t>& k)
 }
 
 // ------------------------
-// Container GOST0 + mode + IV + data
+// Формирование контейнера: префикс GOST0 + режим + IV + данные
 // ------------------------
 vector<uint8_t> GostEncryptContainer(const wstring& text, const vector<uint8_t>& key, int mode) {
     string utf8 = WStringToUTF8(text);
     vector<uint8_t> data(utf8.begin(), utf8.end());
+    // Добавляем паддинг по аналогии с PKCS#7, чтобы длина была кратна 8 байтам
     uint8_t pad = 8 - (data.size() % 8); if (pad == 0) pad = 8; data.insert(data.end(), pad, pad);
     vector<uint8_t> out(data.size());
 
+    // Генерируем IV для режимов с обратной связью
     uint8_t iv[8] = { 0 };
     if (mode == 1 || mode == 2) BCryptGenRandom(NULL, iv, sizeof(iv), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
 
+    // prev — либо предыдущий шифроблок (CBC), либо сдвиговый регистр (CFB)
     uint8_t prev[8] = { 0 }, tmp[8];
     if (mode != 0) memcpy(prev, iv, 8);
 
@@ -747,12 +750,12 @@ vector<uint8_t> GostEncryptContainer(const wstring& text, const vector<uint8_t>&
         if (mode == 0) {
             GostEncryptBlock(&data[i], &out[i], key);
         }
-        else if (mode == 1) { // CBC
+        else if (mode == 1) { // Режим CBC: сцепление шифроблоков
             for (int j = 0;j < 8;++j) data[i + j] ^= prev[j];
             GostEncryptBlock(&data[i], &out[i], key);
             memcpy(prev, &out[i], 8);
         }
-        else { // CFB
+        else { // Режим CFB: потоковое шифрование на базе блока
             GostEncryptBlock(prev, tmp, key);
             for (int j = 0;j < 8;++j) { out[i + j] = tmp[j] ^ data[i + j]; prev[j] = out[i + j]; }
         }
@@ -768,6 +771,7 @@ vector<uint8_t> GostEncryptContainer(const wstring& text, const vector<uint8_t>&
 }
 wstring GostDecryptContainer(const vector<uint8_t>& bin, const vector<uint8_t>& key) {
     if (bin.size() < 5 + 1 + 8) return L"Ошибка: слишком короткие данные.";
+    // Проверяем магическую сигнатуру контейнера
     if (!(bin[0] == 'G' && bin[1] == 'O' && bin[2] == 'S' && bin[3] == 'T' && bin[4] == '0'))
         return L"Ошибка: неизвестный контейнер.";
     int mode = bin[5]; const uint8_t* iv = &bin[6]; size_t pos = 5 + 1 + 8;
@@ -816,7 +820,7 @@ wstring DirectTextDecrypt(const wstring& in, const wstring& keyStr, int) {
 }
 
 // ------------------------
-// Autosave + filenames
+// Автосохранение результатов и формирование имён файлов
 // ------------------------
 wstring GenerateSimpleFileName(const wstring& user, bool enc, int counter) {
     wstring outDir = GetOutputDir(), userDir = outDir + L"\\" + user;
@@ -852,10 +856,11 @@ bool SaveResultToFile(const wstring& text, const wstring& path, bool enc) {
 }
 
 // ------------------------
-// Encrypt/Decrypt handler
+// Центральный обработчик шифрования и расшифрования
 // ------------------------
 void HandleEncryptDecrypt(HWND hWnd, bool encrypt, bool decryptLast) {
     wchar_t keyBuf[256], inputBuf[20000];
+    // Забираем данные из полей интерфейса
     GetWindowTextW(hEditKey, keyBuf, 256);
     GetWindowTextW(hEditInput, inputBuf, 20000);
 
@@ -863,12 +868,14 @@ void HandleEncryptDecrypt(HWND hWnd, bool encrypt, bool decryptLast) {
     wstring inputTxt = TrimWString(inputBuf);
     int mode = (int)SendMessage(hComboMode, CB_GETCURSEL, 0, 0);
 
+    // Минимальные проверки: вошёл ли пользователь и корректен ли ключ
     if (g_CurrentUser.empty()) { MessageBoxW(hWnd, L"Сначала войдите в систему.", L"Ошибка", MB_OK | MB_ICONERROR); return; }
     if (!ValidateKey(keyStr)) {
         MessageBoxW(hWnd, L"Ключ должен быть 64 HEX символа (0–9, A–F).", L"Ошибка", MB_OK | MB_ICONERROR); return;
     }
 
     if (!encrypt) {
+        // Режим "расшифровать последний" подтягивает автосохранённый файл
         if (decryptLast) {
             if (g_LastEncryptedFile.empty() || g_LastUser != g_CurrentUser) {
                 MessageBoxW(hWnd, L"Нет последнего зашифрованного файла для этого пользователя.", L"Ошибка", MB_OK | MB_ICONERROR); return;
@@ -886,12 +893,14 @@ void HandleEncryptDecrypt(HWND hWnd, bool encrypt, bool decryptLast) {
 
     wstring result;
     if (encrypt) {
+        // Шифруем введённый текст и сразу кладём результат в автосохранение
         IsNewInputText(inputTxt);
         result = DirectTextEncrypt(inputTxt, keyStr, mode);
         if (result.rfind(L"Ошибка:", 0) == 0) { MessageBoxW(hWnd, result.c_str(), L"Ошибка шифрования", MB_OK | MB_ICONERROR); return; }
         AutoSaveResult(hWnd, result, g_CurrentUser, true, g_FileCounter);
     }
     else {
+        // Пытаемся расшифровать и фиксируем результат рядом с исходным текстом
         result = DirectTextDecrypt(inputTxt, keyStr, mode);
         if (result.rfind(L"Ошибка:", 0) == 0) { MessageBoxW(hWnd, result.c_str(), L"Ошибка расшифрования", MB_OK | MB_ICONERROR); return; }
         AutoSaveResult(hWnd, result, g_CurrentUser, false, g_FileCounter);
@@ -903,7 +912,7 @@ void HandleEncryptDecrypt(HWND hWnd, bool encrypt, bool decryptLast) {
 }
 
 // ------------------------
-// File dialogs / tooltip
+// Работа с файловыми диалогами и тултипами
 // ------------------------
 void HandleOpenFile(HWND hWnd) {
     OPENFILENAMEW ofn = { sizeof(ofn) }; wchar_t file[MAX_PATH] = L"";
@@ -969,7 +978,7 @@ void InitToolTips(HWND hWnd) {
 }
 
 // ------------------------
-// Exchange (helpers)
+// Обмен сообщениями между пользователями (вспомогательные функции)
 // ------------------------
 void Exchange_RefreshInboxList() {
     if (!hExInList || g_CurrentUser.empty()) return;
@@ -1022,6 +1031,7 @@ bool Exchange_ExtractKeyAndPayload(const wstring& fileData, wstring& keyOut, wst
     firstLine.erase(remove(firstLine.begin(), firstLine.end(), L'\r'), firstLine.end());
     wstring trimmed = TrimWString(firstLine);
 
+    // Формат файла обмена: первая строка KEY:XXXXXXXX..., остальное — base64 тела
     wstring lower = trimmed;
     transform(lower.begin(), lower.end(), lower.begin(), ::towlower);
     if (lower.rfind(L"key:", 0) != 0) return false;
@@ -1064,7 +1074,7 @@ bool Exchange_SendTo(const wstring& recipient, const wstring& textToSend, int mo
 }
 
 // ------------------------
-// User change
+// Смена активного пользователя
 // ------------------------
 void ChangeUser(HWND hWnd) {
     wchar_t kb[256]; GetWindowTextW(hEditKey, kb, 256);
@@ -1094,7 +1104,7 @@ void ChangeUser(HWND hWnd) {
 }
 
 // ------------------------
-// Login window proc
+// Оконная процедура окна входа
 // ------------------------
 LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     static HWND cbUser, ePass, bOk, bNew, stTitle, stSub, bShow, stUserError, stPassError;
@@ -1102,6 +1112,7 @@ LRESULT CALLBACK LoginWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     static HFONT fTitle = NULL, fSub = NULL;
     static vector<wstring> allUsers;
 
+    // Небольшие вспомогательные лямбды для валидации и фильтрации списка пользователей
     auto ClearErrors = [&]() {
         userError = false; passError = false;
         if (stUserError) SetWindowTextW(stUserError, L"");
@@ -1309,7 +1320,7 @@ static LRESULT CALLBACK InputBoxWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPAR
 }
 
 // ------------------------
-// Keys Manager (ListView)
+// Менеджер ключей (ListView)
 // ------------------------
 LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     // ---- controls ----
@@ -1327,6 +1338,7 @@ LRESULT CALLBACK KeysWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         return MulDiv(px, (int)dpi, 96);
         };
 
+    // Диалог ввода метки/ключа переиспользует этот вспомогательный конструктор
     auto InputBox = [&](const std::wstring& title,
         const std::wstring& caption,
         const std::wstring& preset = L"") -> std::wstring
@@ -1645,7 +1657,7 @@ void OpenKeysManager(HWND parent) {
 }
 
 // ------------------------
-// Exchange window
+// Окно обмена сообщениями и файлами
 // ------------------------
 LRESULT CALLBACK ExchangeWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -1898,7 +1910,7 @@ void OpenExchangeWindow(HWND parent) {
 }
 
 // ------------------------
-// Main window proc
+// Оконная процедура главного окна
 // ------------------------
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
@@ -1936,6 +1948,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         const int clientH = rc.bottom - rc.top;
         int y = M;
 
+        // Информация о текущем пользователе и кнопка смены учётной записи
         hStaticCurrentUser = CreateWindowW(L"STATIC", L"👤 Текущий пользователь:",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             M, y, 200, UI_H, hWnd, (HMENU)ID_STATIC_CURRENT_USER, hInst, NULL);
@@ -1952,6 +1965,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             M + 200 + 8 + 220 + 8, y, UI_BTN + 30, UI_H, false);
         y += UI_H + UI_GAP;
 
+        // Поля для ввода ключа и его длины
         CreateWindowW(L"STATIC", L"🔑 Ключ (64 HEX):",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             M, y, 140, UI_H, hWnd, (HMENU)-1, hInst, NULL);
@@ -1977,6 +1991,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         int BOX_H = clientH - y - UI_H * 5 - 40;
         if (BOX_H < 200) BOX_H = 200;
 
+        // Два крупных поля: исходный текст и результат шифрования/расшифрования
         CreateWindowW(L"STATIC", L"📄 Исходный текст:",
             WS_CHILD | WS_VISIBLE | SS_LEFT,
             M, y, 140, UI_H, hWnd, (HMENU)-1, hInst, NULL);
@@ -2022,6 +2037,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             M + 80 + 8 + 220 + 8, y, 100, UI_H, false);
         y += UI_H + 16;
 
+        // Панель действий над текстом
         int WBTN = 170;
         int GAP = 14;
         int total = 4 * WBTN + 3 * GAP;
@@ -2247,7 +2263,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 // ------------------------
-// Register classes
+// Регистрация оконных классов приложения
 // ------------------------
 ATOM MyRegisterClass(HINSTANCE hInstance) {
     WNDCLASSEXW w = { sizeof(WNDCLASSEXW) };
@@ -2276,7 +2292,7 @@ ATOM RegisterLoginClass(HINSTANCE hInstance) {
 }
 
 // ------------------------
-// Create main window after login
+// Создание главного окна после успешного входа
 // ------------------------
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
     HWND hWnd = CreateWindowExW(WS_EX_COMPOSITED,
@@ -2291,7 +2307,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow) {
 }
 
 // ------------------------
-// Entry point
+// Точка входа приложения
 // ------------------------
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR, int nCmdShow) {
     hInst = hInstance;
